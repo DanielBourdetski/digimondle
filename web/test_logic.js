@@ -58,7 +58,8 @@ vm.createContext(ctx);
 const exported = script + `
 ;globalThis.__T = {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade,
   setMode, setPlay, startRound, submitGuess, giveUp, nextEndless, dailyAnswer,
-  openSuggest, getSug: () => sug, SET_DATES, skeleton, LADDERS, HINTS};`;
+  openSuggest, getSug: () => sug, SET_DATES, skeleton, LADDERS, HINTS,
+  endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE: SEARCH.length};`;
 vm.runInContext(exported, ctx, {filename: "index.html#script"});
 
 // --- assertions -----------------------------------------------------------
@@ -76,11 +77,12 @@ function checkThat(name, cond, detail){
 
 const {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade, setMode, setPlay,
        startRound, submitGuess, giveUp, nextEndless, dailyAnswer, openSuggest,
-       getSug, SET_DATES, skeleton, LADDERS, HINTS} = ctx.__T;
+       getSug, SET_DATES, skeleton, LADDERS, HINTS,
+       endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE} = ctx.__T;
 
 console.log("data");
-check("cards loaded", CARDS.length, 4327);
-check("effect pool", POOL.effect.length, 4138);
+check("cards loaded", CARDS.length, 4326);
+check("effect pool", POOL.effect.length, 4137);
 check("schedule modes", Object.keys(SCHEDULE.modes).sort(), ["art","classic","effect"]);
 checkThat("every scheduled id resolves",
   Object.values(SCHEDULE.modes).every(l => l.every(id => BY_ID[id])));
@@ -167,6 +169,44 @@ check("metalgreymon ace", q("metalgreymon ace"), ["MetalGreymon [BT14-014]"]);
 check("full number wins", q("BT10-061")[0], "SkullKnightmon: Mighty Axe Mode [BT10-061]");
 check("spaced number still wins", q("bt10 61")[0], "SkullKnightmon: Mighty Axe Mode [BT10-061]");
 check("nonsense finds nothing", q("zzzqqq"), []);
+
+
+console.log("\nendless filters");
+checkThat("sets are ordered by release date, not by number",
+  SET_ORDER.every((code, i) => !i || SET_DATES[SET_ORDER[i-1]] <= SET_DATES[code]));
+checkThat("EX-08 really does sit between BT-19 and BT-20",
+  SET_RANK.BT19 < SET_RANK.EX8 && SET_RANK.EX8 < SET_RANK.BT20);
+check("default filters take the whole pool",
+  endlessPool("classic").length, CARDS.length);
+
+S.filters = {...defaultFilters(), rarities: ["SEC"]};
+const secOnly = endlessPool("classic");
+checkThat("a rarity filter narrows to exactly that rarity",
+  secOnly.length > 0 && secOnly.every(c => c.rarity === "SEC"));
+
+S.filters = {...defaultFilters(), from: "BT1", to: "BT1"};
+const bt1 = endlessPool("classic");
+checkThat("a single-set range keeps only that set, plus the standalone toggles",
+  bt1.length > 0 && bt1.every(c => ["BT1","P","LM"].includes(c.setCode)) &&
+  bt1.some(c => c.setCode === "BT1"));
+checkThat("every card in the pool has a rarity, so none can dodge the filter",
+  CARDS.every(c => !!c.rarity));
+
+S.filters = {...defaultFilters(), from: "BT26", to: "BT1"};
+checkThat("a reversed range is read as the same span",
+  endlessPool("classic").length === CARDS.length);
+
+S.filters = {...defaultFilters(), promos: false, limited: false};
+checkThat("turning promos and limiteds off removes them",
+  !endlessPool("classic").some(c => c.setCode === "P" || c.setCode === "LM"));
+
+S.filters = {...defaultFilters(), rarities: []};
+checkThat("an impossible filter still deals a card instead of nothing",
+  endlessPool("classic").length === 0 && !!nextEndless("classic"));
+
+S.filters = defaultFilters();
+checkThat("filters never restrict what you may guess",
+  SEARCH_SIZE === CARDS.length);
 
 console.log("\ndaily schedule");
 check("day 0 is stable", dailyAnswer("classic", 0).id, SCHEDULE.modes.classic[0]);

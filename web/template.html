@@ -107,6 +107,34 @@ h1 .dle{color:var(--amber)}
 .ghost:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
 .spacer{flex:1 1 auto}
 
+/* ---------- endless pool filters ---------- */
+.filters{
+  border:1.5px solid var(--rule); background:var(--panel); padding:14px 16px; margin:0 0 14px;
+  display:flex; flex-direction:column; gap:12px;
+}
+.filters .frow{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.filters .flab{
+  font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; font-weight:700;
+  color:var(--cyan); min-width:52px;
+}
+.filters select{
+  font-family:var(--mono); font-size:12.5px; padding:6px 9px;
+  border:1.5px solid var(--rule); background:var(--sunk); color:var(--ink);
+}
+.filters select:focus{outline:none; border-color:var(--cyan)}
+.filters .to{font-size:12px; color:var(--muted)}
+.rtog{
+  font-family:var(--mono); font-size:11.5px; font-weight:700; letter-spacing:.05em;
+  padding:6px 11px; cursor:pointer; border:1.5px solid var(--rule);
+  background:transparent; color:var(--muted); min-width:44px;
+}
+.rtog[aria-pressed="true"]{background:var(--cyan); border-color:var(--cyan); color:var(--on-state)}
+.rtog:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+.filters .count-line{font-family:var(--mono); font-size:12px; color:var(--muted)}
+.filters .count-line b{color:var(--ink)}
+.filters .count-line.empty{color:var(--amber)}
+.filters .reset{margin-left:auto}
+
 /* ---------- guess input ---------- */
 .guessbar{position:relative; display:flex; gap:10px; align-items:stretch}
 .field{position:relative; flex:1 1 auto}
@@ -384,6 +412,8 @@ footer a{color:var(--cyan)}
     <button class="ghost" id="btn-give">Give up</button>
   </div>
 
+  <div id="filters"></div>
+
   <div class="guessbar">
     <div class="field">
       <input id="guess" type="text" placeholder="Try “bt14 agumon”, “greymon x”, or a full number like BT10-061…" autocomplete="off"
@@ -587,6 +617,68 @@ const POOL = {
   effect:  CARDS.filter(c => EFFECTS[c.id])
 };
 
+/* ============================ ENDLESS FILTERS ============================
+   Daily is the same card for everyone and stays that way. Endless is yours, so
+   it gets a pool you can narrow: a span of sets and a set of rarities.
+
+   Sets are ordered by English release date rather than by number, because that
+   is the order players think in and the numbers interleave (EX-08 sits between
+   BT-19 and BT-20). P and LM are not on that line at all — neither is a single
+   set — so they are toggles of their own rather than range endpoints.
+
+   Filtering only ever narrows the *answers*. You can still guess any card; a
+   filter that also restricted guesses would just make the game annoying.
+   ======================================================================== */
+
+const SET_ORDER = Object.keys(SET_DATES)
+  .filter(code => CARDS.some(c => c.setCode === code))
+  .sort((a, b) => SET_DATES[a] < SET_DATES[b] ? -1 : SET_DATES[a] > SET_DATES[b] ? 1 : (a < b ? -1 : 1));
+const SET_RANK = Object.fromEntries(SET_ORDER.map((code, i) => [code, i]));
+const setLabel = code => code.replace(/^([A-Z]+)(\d+)$/, (_, p, n) => `${p}-${n.padStart(2, "0")}`);
+
+const RARITIES = ["C", "U", "R", "SR", "UR", "SEC", "P"];
+const FILTER_KEY = "dgdle.filters";
+
+const defaultFilters = () => ({
+  from: SET_ORDER[0],
+  to: SET_ORDER[SET_ORDER.length - 1],
+  promos: true,
+  limited: true,
+  rarities: RARITIES.slice()
+});
+
+function loadFilters(){
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER_KEY));
+    if (!f) return defaultFilters();
+    const d = defaultFilters();
+    return {
+      from: SET_RANK[f.from] !== undefined ? f.from : d.from,
+      to:   SET_RANK[f.to]   !== undefined ? f.to   : d.to,
+      promos: f.promos !== false,
+      limited: f.limited !== false,
+      // drop anything that is no longer a rarity, and never end up with none
+      rarities: (Array.isArray(f.rarities) ? f.rarities.filter(r => RARITIES.includes(r)) : d.rarities)
+    };
+  } catch(e){ return defaultFilters(); }
+}
+function saveFilters(){ try { localStorage.setItem(FILTER_KEY, JSON.stringify(S.filters)); } catch(e){} }
+
+function cardPasses(c, f){
+  if (!f.rarities.includes(c.rarity)) return false;
+  if (c.setCode === "P")  return f.promos;
+  if (c.setCode === "LM") return f.limited;
+  const rank = SET_RANK[c.setCode];
+  if (rank === undefined) return false;
+  const lo = Math.min(SET_RANK[f.from], SET_RANK[f.to]);
+  const hi = Math.max(SET_RANK[f.from], SET_RANK[f.to]);
+  return rank >= lo && rank <= hi;
+}
+
+function endlessPool(mode){
+  return POOL[mode].filter(c => cardPasses(c, S.filters));
+}
+
 const S = {
   mode:"classic",      // classic | art | effect
   play:"daily",        // daily | endless
@@ -597,19 +689,31 @@ const S = {
   hints:{one:false, two:false},
   fresh:0,
   endlessQueue:{},     // mode -> remaining shuffled ids, so endless never repeats
-  endlessSeed:Math.floor(Math.random()*1e9)
+  endlessSeed:Math.floor(Math.random()*1e9),
+  filters:null         // endless-only pool narrowing, filled below
 };
+S.filters = loadFilters();
 
 function stateKey(){ return S.mode + ":d" + S.day; }
 
 function nextEndless(mode){
   let q = S.endlessQueue[mode];
   if (!q || !q.length){
-    q = shuffled(POOL[mode].map(c => c.id), S.endlessSeed + mode.length);
+    const pool = endlessPool(mode);
+    // a filter that leaves nothing would deal undefined forever; fall back to
+    // the whole mode pool rather than hand the player a broken round
+    q = shuffled((pool.length ? pool : POOL[mode]).map(c => c.id), S.endlessSeed + mode.length);
     S.endlessSeed++;
   }
   S.endlessQueue[mode] = q;
   return BY_ID[q.pop()];
+}
+
+function applyFilters(){
+  saveFilters();
+  S.endlessQueue = {};        // the old queue was drawn from the old pool
+  if (S.play === "endless") startRound(false);
+  else renderFilters();
 }
 
 function startRound(restore){
@@ -887,8 +991,57 @@ function resultHTML(){
   </div>`;
 }
 
+function renderFilters(){
+  const host = $("#filters");
+  if (S.play !== "endless"){ host.innerHTML = ""; return; }
+  const f = S.filters;
+  const opts = sel => SET_ORDER.map(code =>
+    `<option value="${code}"${code === sel ? " selected" : ""}>${setLabel(code)} · ${SET_DATES[code]}</option>`).join("");
+  const pool = endlessPool(S.mode);
+  const size = pool.length;
+  // The range spans release dates, so picking BT-20 to BT-26 also sweeps in the
+  // EX, ST and AD sets that shipped between them. Saying how many sets survived
+  // stops that being a surprise.
+  const setCount = new Set(pool.map(c => c.setCode)).size;
+
+  host.innerHTML = `<div class="filters">
+    <div class="frow">
+      <span class="flab" title="Sets are ordered by release date, so a range also includes everything that shipped in between">Sets</span>
+      <select id="f-from" aria-label="First set">${opts(f.from)}</select>
+      <span class="to">to</span>
+      <select id="f-to" aria-label="Last set">${opts(f.to)}</select>
+      <button class="rtog" id="f-promos" aria-pressed="${f.promos}">Promos</button>
+      <button class="rtog" id="f-limited" aria-pressed="${f.limited}">Limited</button>
+    </div>
+    <div class="frow">
+      <span class="flab">Rarity</span>
+      ${RARITIES.map(r =>
+        `<button class="rtog" data-rarity="${r}" aria-pressed="${f.rarities.includes(r)}">${r}</button>`).join("")}
+      <button class="ghost reset" id="f-reset">Reset</button>
+    </div>
+    <div class="count-line ${size ? "" : "empty"}">${
+      size ? `<b>${size.toLocaleString("en")}</b> cards across <b>${setCount}</b> set${setCount === 1 ? "" : "s"} can come up in endless`
+           : "Nothing matches these filters — endless will use every card until you widen them"
+    }</div>
+  </div>`;
+
+  $("#f-from").onchange = e => { S.filters.from = e.target.value; applyFilters(); };
+  $("#f-to").onchange   = e => { S.filters.to   = e.target.value; applyFilters(); };
+  $("#f-promos").onclick  = () => { S.filters.promos  = !S.filters.promos;  applyFilters(); };
+  $("#f-limited").onclick = () => { S.filters.limited = !S.filters.limited; applyFilters(); };
+  $("#f-reset").onclick   = () => { S.filters = defaultFilters(); applyFilters(); };
+  host.querySelectorAll("[data-rarity]").forEach(b => {
+    b.onclick = () => {
+      const r = b.dataset.rarity, list = S.filters.rarities;
+      S.filters.rarities = list.includes(r) ? list.filter(x => x !== r) : list.concat(r);
+      applyFilters();
+    };
+  });
+}
+
 function render(){
   $("#poolsize").textContent = POOL[S.mode].length.toLocaleString("en");
+  renderFilters();
   renderGauge();
 
   let html = "";

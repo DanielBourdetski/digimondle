@@ -223,11 +223,15 @@ for src in tk:
         "tcgplayerId": primary.get("tcgplayer_id"),
     }
 
-    # a card is eligible for the daily puzzle if it's a real, released card
+    # A card is eligible for the daily puzzle if it is a real, released card.
+    # Rarity is part of that test: the rows that lack one are incomplete
+    # spoilers rather than cards — BT26-091 has a name and an effect but no
+    # rarity, no illustrator and no art on either host.
     card["inPool"] = bool(
         card["released"]
         and card["cardType"]
         and card["name"]
+        and card["rarity"]
     )
 
     cards.append(card)

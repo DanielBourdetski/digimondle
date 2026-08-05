@@ -307,9 +307,32 @@ re-rolls from tomorrow on. Today counts as spoken for — its answer is live.
 ## Endless
 
 Every mode has a Daily and an Endless side. Endless deals from a shuffled queue
-of the whole pool and pops as it goes, so it exhausts all 4089 cards before it
-repeats one — verified by drawing 500 in a row with no duplicate. Nothing is
-saved and nothing touches the streak.
+and pops as it goes, so it exhausts the pool before repeating anything —
+verified by drawing 1200 in a row with no duplicate. Nothing is saved and
+nothing touches the streak.
+
+### Pool filters
+
+Daily is the same card for everyone and stays that way. Endless is yours, so it
+gets a panel — visible only in Endless — that narrows what can come up: a span
+of sets, plus a toggle per rarity. Choices persist in `localStorage`.
+
+Sets are ordered by **release date**, not by number, because the numbers
+interleave: EX-08 shipped between BT-19 and BT-20. So a range of BT-20 to BT-26
+also sweeps in the EX, ST and AD sets released in between, which is why the
+panel reports how many sets survived rather than only the count of cards. `P`
+and `LM` are not on that line at all — neither is a single set — so they are
+toggles of their own rather than range endpoints.
+
+Filtering only ever narrows the **answers**. Every card stays guessable; a
+filter that also restricted guesses would just be annoying. If a combination
+matches nothing, Endless falls back to the full pool rather than dealing
+`undefined` forever.
+
+The filter is also why pool membership now requires a rarity. BT26-091 has a
+name and an effect but no rarity, no illustrator and no art on either host — an
+incomplete spoiler row rather than a card. It matched no rarity checkbox, so it
+could never be dealt no matter what you picked; now it is not in the pool at all.
 
 ## Searching
 
