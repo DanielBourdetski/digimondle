@@ -5,7 +5,7 @@ copy means the rules can be tested against the real 4089-card pool instead of
 being eyeballed in a UI.
 
 The awkward part of a Digimon TCG dle is that Option and Tamer cards have no
-Level, DP, Form or Attribute at all. The rule that makes this work:
+Level, DP or Attribute at all. The rule that makes this work:
 
     both sides missing the field  ->  CORRECT
 
@@ -168,7 +168,7 @@ if __name__ == "__main__":
 
     # a Digimon guessed against a Digimon
     show("ST1-03", "BT10-061")
-    # an Option guessed against a Digimon: five dead columns
+    # an Option guessed against a Digimon: four dead columns
     show("BT2-096", "BT10-061")
     # an Option guessed against an Option: the dead columns become the clue
     opt = next(c for c in cards if c["cardType"] == "Option" and c["id"] != "BT2-096")

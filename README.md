@@ -1,28 +1,35 @@
-# digimondle — data pipeline
+# Digimondle
 
-A daily "guess the card" game for the Digimon TCG. This folder currently holds
-the data layer only.
+A daily "guess the card" game for the Digimon TCG.
+
+**Play: https://galpartuk.github.io/digimondle/**
+
+`index.html` is self-contained and also runs by double-clicking it — card images
+are the only thing it fetches, so it needs a connection for those.
 
 ## Running it
 
 ```bash
-python fetch_data.py         # download raw sources -> data/raw/
-python build_dataset.py      # merge + normalise    -> data/build/cards.json
-python detect_sample.py all  # pick the clean image host per card (slow, optional)
-python build_game_data.py    # browser payload      -> data/build/game/
-python web/build_site.py     # inline it all        -> index.html
-python compare.py            # run the guess-logic self-test
+python fetch_data.py         # download raw sources  -> data/raw/
+python build_dataset.py      # merge + normalise     -> data/build/cards.json
+python fetch_set_dates.py    # English release dates -> data/build/set_dates.json
+python detect_sample.py all  # clean image host per card (slow: ~8000 downloads)
+python build_game_data.py    # browser payload       -> data/build/game/
+python web/build_site.py     # inline it all         -> index.html
+
+python compare.py            # guess-logic self-test against the real pool
+node web/test_logic.js       # the same logic, headless, as the browser runs it
 python profile_data.py       # optional: field distributions of the raw data
 ```
 
-Open `index.html` — it is self-contained and runs from `file://`.
+`fetch_data.py`, `fetch_set_dates.py` and `detect_sample.py` are the only steps
+that touch the network. Everything else rebuilds offline, and their outputs are
+committed so a clone can go straight to `build_game_data.py`.
 
-`fetch_data.py` and `detect_sample.py` are the only steps that touch the network.
-Everything else rebuilds offline.
-
-After a new set drops, `fetch_data.py` → `build_game_data.py` → `web/build_site.py`
-is enough; re-run `detect_sample.py all` only when you care about watermarks on
-the new cards.
+After a new set drops: `fetch_data.py` → `build_dataset.py` → `fetch_set_dates.py`
+→ `build_game_data.py` → `web/build_site.py` → commit → push. Pages redeploys
+itself in about a minute. Re-run `detect_sample.py all` only when you care about
+watermarks on the new cards.
 
 ## Sources
 
@@ -122,7 +129,6 @@ what caught both earlier versions, and neither showed up in the numbers.
   "level": 4,                       // 2-7, null for Option/Tamer
   "playCost": 4,
   "dp": 5000,
-  "form": "Champion",               // Rookie/Champion/Ultimate/Mega/Hybrid/...
   "attribute": "Virus",             // Vaccine/Virus/Data/Free/Variable/...
   "types": ["Enhancement", "Twilight"],
   "rarity": "C",
@@ -164,8 +170,7 @@ for release order; a real set→date table would have to be added by hand.
 English). Of the pool: 3065 Digimon, 483 Option, 306 Tamer, 235 Digi-Egg,
 spread over 64 sets and 1816 distinct card names.
 
-Level, play cost, DP, form and attribute only exist for Digimon — 2973 Digimon
-have all five. Option and Tamer cards have colour, cost and rarity but nothing
+Level, play cost, DP and attribute only exist for Digimon. Option and Tamer cards have colour, cost and rarity but nothing
 else.
 
 ---
@@ -177,24 +182,60 @@ Three modes, all guessing a **specific card** (`Agumon ST1-03`, not `Agumon` —
 
 ## Classic — the comparison grid
 
-`compare.py` is the reference implementation; the browser mirrors it. Nine
-columns: cardType, colors, level, playCost, dp, form, attribute, types, setCode.
+`compare.py` is the reference implementation; the browser mirrors it, and
+`web/test_logic.js` asserts they agree. Nine columns: cardType, colors, level,
+playCost, dp, attribute, types, rarity, setCode.
 
 Cell states: `correct`, `partial`, `absent`, plus `higher` / `lower` on the
-numeric columns.
+numeric columns and on Set.
+
+**Form is deliberately not a column.** It mostly restated Level —
+Rookie/Champion/Ultimate/Mega track Lv.3/4/5/6 almost one to one — and its
+"same evolution family" partial was too vague to act on. Rarity took the slot,
+as a plain right-or-wrong with promos being their own rarity `P`.
 
 The rule that makes a mixed pool work is **both sides missing a field counts as
-correct**. Guess an Option card and the Level/DP/Form/Attribute/Type cells come
+correct**. Guess an Option card and the Level/DP/Attribute/Type cells come
 back green-with-a-dash only if the answer is *also* a card without them — which
-eliminates all 3065 Digimon in one guess. What looked like five dead columns is
+eliminates all 3065 Digimon in one guess. What looked like four dead columns is
 the strongest single move in the game.
 
-Partial credit: `colors` and `types` on any overlap; `form` within an evolution
-family (Rookie/Champion/Ultimate/Mega are one family, Hybrid/Armor/D-Reaper
-another); `setCode` on the same set line (any BT vs any BT).
+Partial credit is only for `colors` and `types`, on any overlap. Everything else
+is right or wrong.
 
-Verified over 20k random pairings: 16.8% correct, 10.7% partial, 52.5% absent,
-20% directional — and every card compares as all-correct against itself.
+Verified over 20k random pairings: 17.7% correct, 1.6% partial, 51.2% absent,
+29.4% directional — and every card compares as all-correct against itself.
+
+### The Set column points in time
+
+Not at the set number. `set_dates.json` holds the English release month of every
+set, so ↑ means the answer is from a later release than the card you guessed.
+
+The card data has no usable release date of its own — digimoncard.io's
+`date_added` is when the row was imported, which puts every set older than the
+import on 2025-11-25 — so `fetch_set_dates.py` scrapes the DigimonCardGame
+wiki's set-list pages, which group releases under `===Month, Year===` headings.
+
+Two things there are easy to get wrong:
+
+- The page is a **five-tab tabber** (Worldwide, English, Japanese, Chinese,
+  Korean) and the Japanese tab lists the same sets months earlier. Both English
+  tabs are needed, not one: Bandai only unified releases in April 2025, so
+  "Worldwide" covers 2025-04 onward and everything older is under "English".
+- The English releases **bundled sets into version products**, listed under a
+  version code rather than a set code. Reading `BT2.0` as `BT2` is not a miss,
+  it is wrong data — it dated BT-02 to November 2024 when BT-02 actually shipped
+  in the Ver.1.0 bundle in January 2021. `BUNDLES` maps the four of them, with
+  contents confirmed against `printedIn` in our own card data.
+
+Result: all 62 datable sets covered, and BT-01 … BT-26 come out strictly
+monotonic in time. Sets from different lines interleave — BT-18 and BT-19 both
+landed in November 2024, EX-08 sits between BT-19 and BT-20 — which is exactly
+the information the arrow carries and the set number does not.
+
+`P` and `LM` carry no arrow. Neither is a set: `P` is every promo ever printed,
+and `LM` covers LM-01 through LM-08. Both span years, so there is nothing
+honest to point at.
 
 ## Art — progressive reveal
 
