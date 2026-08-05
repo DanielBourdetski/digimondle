@@ -1,0 +1,15 @@
+{
+  "builtFrom": "2026-08-05 10:56:32",
+  "poolSize": 4089,
+  "effectPoolSize": 3902,
+  "startDate": "2026-08-05",
+  "days": 365,
+  "imageUrl": "https://digimoncard.app/assets/images/cards/{id}.webp",
+  "imageFallback": "https://images.digimoncard.io/images/cards/{id}.jpg",
+  "byCardType": {
+    "Digimon": 3065,
+    "Tamer": 306,
+    "Digi-Egg": 235,
+    "Option": 483
+  }
+}

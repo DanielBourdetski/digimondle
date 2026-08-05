@@ -1,0 +1,13 @@
+# The raw source dumps are ~19 MB and fetch_data.py regenerates them in seconds.
+data/raw/
+data/build/stats.json
+
+# Everything else under data/build/ is committed on purpose:
+#   cards.json      so build_game_data.py runs straight after a clone
+#   game/           the browser payload web/build_site.py inlines
+#   set_dates.json  scraped from a wiki that could reorganise at any time
+#   image_host.json ~20 minutes and 8000 image downloads to rebuild
+
+__pycache__/
+*.pyc
+.jscheck.js

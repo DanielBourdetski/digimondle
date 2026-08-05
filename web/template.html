@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{box-sizing:border-box}html,body{margin:0;padding:0}</style>
+<title>Digimondle — the daily Digimon TCG card guessing game</title>
+</head>
+<body>
+<style>
+/* ============================================================
+   Digivice terminal. Dark-first, because the card art is dark
+   and saturated and looks wrong floating on white.
+   ============================================================ */
+:root{
+  --bg:#0B0F16; --panel:#141A24; --panel-2:#1B2330; --sunk:#080B11;
+  --ink:#E9EFF7; --muted:#8595AA; --rule:#2C3746; --rule-soft:#222B38;
+  --amber:#FF6B1A; --cyan:#2FE3E3; --cyan-dim:#1C8C8C;
+  --hit:#1E9E6A; --near:#C9962A; --miss:#3A4453;
+  --on-state:#06090D;
+  --grid-line:rgba(47,227,227,.055);
+  --cut:10px;
+  --display:"Bahnschrift","DIN Alternate","Franklin Gothic Medium Cond","Arial Narrow",system-ui,sans-serif;
+  --body:"Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Consolas","SF Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:light){
+  :root{
+    --bg:#DFE5EC; --panel:#F4F7FA; --panel-2:#E7ECF3; --sunk:#CDD6E0;
+    --ink:#101720; --muted:#5A6879; --rule:#9CACBE; --rule-soft:#C2CEDC;
+    --amber:#D9490A; --cyan:#0E8A8A; --cyan-dim:#7FC4C4;
+    --hit:#187C53; --near:#9A7212; --miss:#8494A6;
+    --on-state:#FFFFFF;
+    --grid-line:rgba(16,23,32,.05);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#DFE5EC; --panel:#F4F7FA; --panel-2:#E7ECF3; --sunk:#CDD6E0;
+  --ink:#101720; --muted:#5A6879; --rule:#9CACBE; --rule-soft:#C2CEDC;
+  --amber:#D9490A; --cyan:#0E8A8A; --cyan-dim:#7FC4C4;
+  --hit:#187C53; --near:#9A7212; --miss:#8494A6;
+  --on-state:#FFFFFF;
+  --grid-line:rgba(16,23,32,.05);
+}
+:root[data-theme="dark"]{
+  --bg:#0B0F16; --panel:#141A24; --panel-2:#1B2330; --sunk:#080B11;
+  --ink:#E9EFF7; --muted:#8595AA; --rule:#2C3746; --rule-soft:#222B38;
+  --amber:#FF6B1A; --cyan:#2FE3E3; --cyan-dim:#1C8C8C;
+  --hit:#1E9E6A; --near:#C9962A; --miss:#3A4453;
+  --on-state:#06090D;
+  --grid-line:rgba(47,227,227,.055);
+}
+
+/* the six card colours, kept apart from the hit/near/miss palette on purpose */
+:root{
+  --c-Red:#DC3A32; --c-Blue:#2D7FD6; --c-Yellow:#EFC02A; --c-Green:#2FA355;
+  --c-Black:#333A46; --c-Purple:#8B4CC4; --c-White:#DDE4EC;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--body); font-size:16px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:34px 34px;
+}
+.wrap{position:relative; z-index:1; max-width:1140px; margin:0 auto; padding:24px 16px 72px}
+
+/* the clipped corner is the motif — it echoes the card frame */
+.cut{clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
+
+/* ---------- masthead ---------- */
+.masthead{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:20px}
+.mark{width:62px; height:62px; flex:none}
+.kana{display:block; font-size:10.5px; letter-spacing:.42em; color:var(--cyan); font-weight:700; margin-bottom:3px}
+h1{
+  font-family:var(--display); font-weight:700; margin:0;
+  font-size:clamp(36px,7.4vw,58px); line-height:.9; letter-spacing:-.01em; text-transform:uppercase;
+}
+h1 .dle{color:var(--amber)}
+.tagline{margin:9px 0 0; color:var(--muted); font-size:14px; max-width:60ch}
+.tagline b{color:var(--ink); font-weight:600}
+
+/* ---------- controls ---------- */
+.bar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:22px 0 14px}
+.seg{display:flex; border:1.5px solid var(--rule); background:var(--panel); overflow:hidden}
+.seg button{
+  font-family:var(--body); font-weight:600; font-size:11.5px; letter-spacing:.14em;
+  text-transform:uppercase; padding:10px 15px; border:0; background:transparent;
+  color:var(--muted); cursor:pointer; transition:background .15s,color .15s;
+}
+.seg button + button{border-left:1.5px solid var(--rule)}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--cyan); color:var(--on-state)}
+.seg button:focus-visible{outline:2px solid var(--amber); outline-offset:-2px}
+.ghost{
+  font-family:var(--body); font-weight:600; font-size:11.5px; letter-spacing:.14em;
+  text-transform:uppercase; padding:10px 14px; cursor:pointer;
+  border:1.5px solid var(--rule); background:var(--panel); color:var(--ink);
+}
+.ghost:hover{border-color:var(--cyan); color:var(--cyan)}
+.ghost:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+.spacer{flex:1 1 auto}
+
+/* ---------- guess input ---------- */
+.guessbar{position:relative; display:flex; gap:10px; align-items:stretch}
+.field{position:relative; flex:1 1 auto}
+#guess{
+  width:100%; font-family:var(--body); font-size:16.5px; padding:14px 16px;
+  border:1.5px solid var(--rule); background:var(--sunk); color:var(--ink);
+}
+#guess::placeholder{color:var(--muted)}
+#guess:focus{outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(47,227,227,.13)}
+#guess:disabled{opacity:.45}
+.go{
+  font-family:var(--display); font-size:17px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  padding:0 24px; border:1.5px solid var(--amber); background:var(--amber); color:#0B0F16;
+  cursor:pointer; transition:filter .15s;
+}
+.go:hover{filter:brightness(1.14)}
+.go:disabled{background:var(--miss); border-color:var(--miss); color:var(--muted); cursor:not-allowed; filter:none}
+
+.suggest{
+  position:absolute; z-index:30; top:calc(100% + 6px); left:0; right:0; margin:0; padding:0;
+  list-style:none; max-height:340px; overflow-y:auto;
+  border:1.5px solid var(--cyan); background:var(--panel); box-shadow:0 14px 36px rgba(0,0,0,.5);
+}
+.suggest:empty{display:none}
+.suggest li{
+  display:flex; align-items:center; gap:11px; padding:7px 13px; cursor:pointer;
+  border-bottom:1px solid var(--rule-soft);
+}
+.suggest li:last-child{border-bottom:0}
+.suggest li[aria-selected="true"]{background:var(--panel-2)}
+.suggest li[aria-selected="true"] .nm{color:var(--cyan)}
+.sug-art{width:30px; height:42px; object-fit:cover; object-position:50% 22%; flex:none; background:var(--sunk); border:1px solid var(--rule)}
+.suggest .nm{font-weight:600; font-size:14.5px}
+.suggest .meta{margin-left:auto; display:flex; align-items:center; gap:8px}
+.suggest .code{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
+.suggest .kind{font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); border:1px solid var(--rule); padding:2px 6px}
+
+/* colour chips — never rendered as bare text, so a "Green" value can't be
+   mistaken for a green (correct) tile */
+.chips{display:inline-flex; gap:3px; vertical-align:-2px}
+.chip{width:11px; height:11px; border-radius:50%; border:1px solid rgba(0,0,0,.42); display:inline-block}
+.tile .chips{gap:4px; margin-bottom:3px}
+.tile .chip{width:13px; height:13px; border-color:rgba(0,0,0,.5)}
+
+/* ---------- memory gauge (the guess counter) ---------- */
+.status{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin:20px 0 4px}
+.gauge{display:flex; align-items:stretch; border:1.5px solid var(--rule); background:var(--sunk); overflow:hidden}
+.gauge i{
+  font-style:normal; font-family:var(--mono); font-size:11px; width:26px; text-align:center;
+  padding:5px 0; color:var(--muted); border-right:1px solid var(--rule-soft); transition:background .25s,color .25s;
+}
+.gauge i:last-child{border-right:0}
+.gauge i.zero{color:var(--ink); font-weight:700}
+.gauge i.spent{background:var(--amber); color:#0B0F16; font-weight:700}
+.gauge i.now{background:var(--cyan); color:var(--on-state); font-weight:700}
+.count{font-family:var(--mono); font-size:12.5px; color:var(--muted); letter-spacing:.03em}
+.count b{color:var(--ink); font-size:14.5px}
+
+/* ---------- hints ---------- */
+.hints{display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 20px}
+.hint{border:1.5px dashed var(--rule); background:var(--panel); padding:9px 13px; font-size:13px; color:var(--muted); display:flex; gap:11px; align-items:center}
+.hint.open{border-style:solid; border-color:var(--cyan); color:var(--ink)}
+.hint .lab{font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; font-weight:700; color:var(--cyan)}
+.hint .val{font-weight:600}
+.hint .locked-val{font-style:italic; opacity:.7}
+.claim{
+  font-family:var(--body); font-weight:600; font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+  padding:6px 11px; cursor:pointer; border:1px solid var(--cyan); background:transparent; color:var(--cyan);
+}
+.claim:hover{background:var(--cyan); color:var(--on-state)}
+.hint-art{gap:12px; padding:8px 13px 8px 8px}
+.peek{width:84px; height:84px; flex:none; overflow:hidden; border:1.5px solid var(--rule); background:var(--sunk)}
+.peek img{display:block; width:100%; height:100%; object-fit:cover; transform:scale(var(--z,3.4)); transform-origin:50% 32%; filter:blur(1px)}
+.peek.locked{display:flex; align-items:center; justify-content:center; border-style:dashed}
+.peek.locked span{font-family:var(--display); font-size:30px; color:var(--rule)}
+
+/* ---------- grid ---------- */
+.board{overflow-x:auto; border-top:1.5px solid var(--rule); margin-top:4px}
+.grid{min-width:940px}
+.row{display:grid; grid-template-columns:repeat(9,minmax(100px,1fr)); gap:4px; margin-bottom:4px}
+.head{position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 0 7px}
+.head span{font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; font-weight:700; color:var(--muted); text-align:center; line-height:1.3}
+.tile{
+  position:relative; min-height:80px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; padding:9px 6px;
+  font-size:11.5px; font-weight:600; line-height:1.3; letter-spacing:.02em;
+  text-transform:uppercase; color:var(--on-state); overflow:hidden;
+}
+.tile.hit{background:var(--hit)}
+.tile.near{background:var(--near)}
+.tile.miss{background:var(--miss); color:var(--ink)}
+.tile .arrow{display:block; font-size:20px; line-height:1; margin-top:2px}
+/* "neither of us has this" reads as a dash on a hit tile, with a hatch so it
+   is obviously a different kind of match from a real value match */
+.tile.na{background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.14) 0 5px,transparent 5px 10px)}
+.tile .nalab{font-size:8.5px; letter-spacing:.1em; opacity:.85; margin-top:4px; text-transform:none}
+.tile .dash{font-size:22px; line-height:1; opacity:.8}
+.tile.flip{animation:flip .42s cubic-bezier(.2,.7,.3,1) both; animation-delay:var(--d,0ms)}
+@keyframes flip{0%{transform:rotateX(-90deg); opacity:0}60%{transform:rotateX(10deg); opacity:1}100%{transform:none}}
+.namecell{
+  grid-column:1/-1; display:flex; align-items:center; gap:11px; padding:3px 2px 5px;
+  border-bottom:1px solid var(--rule-soft); margin-top:16px;
+}
+.namecell .avatar{width:34px; height:47px; object-fit:cover; object-position:50% 22%; border:1px solid var(--rule); flex:none; background:var(--sunk)}
+.namecell .n{font-family:var(--display); font-size:19px; font-weight:700; letter-spacing:.01em; text-transform:uppercase}
+.namecell .code{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--muted)}
+
+/* ---------- art mode ----------
+   A wide slit, not a square. On a Digimon card the rules text is printed over
+   the art at about 58% of the card height, and there is a thumbnail of the same
+   Digimon down in the inherited-effect box — so the window must never reach
+   either. A 3:2 landscape window keeps the visible band to 24%–52% of the card
+   even at the widest zoom, where a square one would have run past 62%.
+   left/top 50% + translate(-50%,-38%) puts the card's 38% point dead centre,
+   and transform-origin sits on that same point so zooming holds it still. */
+.artstage{display:flex; justify-content:center; margin-bottom:18px}
+.artbox{
+  width:min(440px,88vw); aspect-ratio:3/2; overflow:hidden; position:relative;
+  border:1.5px solid var(--rule); background:var(--sunk);
+}
+.artbox img{
+  position:absolute; left:50%; top:50%; width:100%; height:auto; display:block;
+  aspect-ratio:430/601;   /* so the box has its real height before the art lands */
+  transform-origin:50% 38%;
+  transform:translate(-50%,-38%) scale(var(--z,4.6));
+  filter:blur(var(--b,3px)) saturate(1.06);
+  transition:transform .65s cubic-bezier(.3,.8,.4,1), filter .65s ease;
+}
+.artbox::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.17) 0 1px,transparent 1px 3px);
+  opacity:.5;
+}
+.artnote{text-align:center; font-size:12px; color:var(--muted); margin:-8px 0 20px; font-family:var(--mono)}
+
+/* ---------- wrong guesses (art + effect modes) ---------- */
+.wrongs{display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 8px}
+.wrong{
+  display:flex; align-items:center; gap:8px; padding:5px 11px 5px 5px;
+  border:1.5px solid var(--rule); background:var(--panel); color:var(--muted);
+}
+.wrong img{width:24px; height:33px; object-fit:cover; object-position:50% 22%; background:var(--sunk)}
+.wrong .n{font-size:13px; font-weight:600; text-decoration:line-through}
+.wrong .c{font-family:var(--mono); font-size:11px; opacity:.75}
+
+/* ---------- effect mode ---------- */
+.rules{border:1.5px solid var(--rule); background:var(--panel); padding:20px 22px; margin-bottom:18px}
+.rules .lab{font-size:9.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--cyan); font-weight:700; display:block; margin-bottom:5px}
+.rules .txt{font-size:15px; line-height:1.62; white-space:pre-wrap}
+.rules .blk + .blk{margin-top:16px; padding-top:15px; border-top:1px solid var(--rule-soft)}
+.rules .mask{background:var(--rule); color:transparent; padding:0 2px; border-radius:2px; user-select:none}
+
+/* ---------- result ---------- */
+.result{border:1.5px solid var(--rule); background:var(--panel); padding:22px; margin:24px 0 6px}
+.result.win{border-color:var(--hit)}
+.result.lose{border-color:var(--amber)}
+.result-inner{display:flex; gap:22px; align-items:flex-start}
+.result-body{flex:1 1 auto; min-width:0}
+.cardshot{width:190px; flex:none; border:1.5px solid var(--rule); background:var(--sunk); animation:reveal .5s ease both}
+@keyframes reveal{from{opacity:0; transform:translateY(10px) scale(.97)}to{opacity:1; transform:none}}
+@media (max-width:600px){.result-inner{flex-direction:column} .cardshot{width:150px}}
+.result h2{font-family:var(--display); font-weight:700; text-transform:uppercase; font-size:clamp(23px,4.2vw,34px); margin:0 0 3px; line-height:1.04}
+.result .sub{font-family:var(--mono); font-size:13px; color:var(--muted); margin:0 0 14px}
+.result p{margin:0 0 12px; font-size:14.5px; max-width:62ch}
+.result .jp{font-size:14px; color:var(--muted); margin:0 0 12px}
+.factlist{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:11px; margin:15px 0 17px}
+.fact{border-left:2px solid var(--cyan); padding-left:10px}
+.fact .lab{display:block; font-size:9px; letter-spacing:.17em; text-transform:uppercase; color:var(--muted); font-weight:700}
+.fact .val{font-size:13.5px; font-weight:600}
+.actions{display:flex; gap:10px; flex-wrap:wrap}
+
+/* ---------- misc ---------- */
+details.how{margin-top:38px; border-top:1.5px solid var(--rule); padding-top:16px}
+details.how summary{cursor:pointer; font-family:var(--display); font-size:19px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; list-style:none}
+details.how summary::-webkit-details-marker{display:none}
+details.how summary::before{content:"▸ "; color:var(--cyan)}
+details.how[open] summary::before{content:"▾ "}
+details.how .body{padding-top:12px; font-size:14px; color:var(--muted); max-width:72ch}
+details.how .body b{color:var(--ink)}
+details.how .body h4{color:var(--ink); font-size:14px; margin:18px 0 6px; letter-spacing:.04em; text-transform:uppercase}
+.legend{display:flex; gap:16px; flex-wrap:wrap; margin:12px 0; font-size:13px}
+.legend i{display:inline-block; width:14px; height:14px; margin-right:7px; vertical-align:-2px; font-style:normal; border:1px solid var(--rule)}
+footer{margin-top:34px; font-size:12px; color:var(--muted); border-top:1px solid var(--rule-soft); padding-top:14px; line-height:1.7}
+footer a{color:var(--cyan)}
+.toast{
+  position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+  background:var(--cyan); color:var(--on-state); padding:11px 22px; font-size:13.5px; font-weight:700;
+  letter-spacing:.03em; z-index:60; opacity:0; pointer-events:none; transition:opacity .2s;
+}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .tile.flip{animation:none}
+  *{transition:none !important}
+}
+@media (max-width:560px){
+  .mark{width:48px; height:48px}
+  .go{padding:0 17px; font-size:15px}
+  .gauge i{width:21px; font-size:10px}
+}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2FE3E3"/><stop offset="100%" stop-color="#1C6FA8"/>
+        </linearGradient>
+      </defs>
+      <!-- a digi-egg: the thing every Digimon starts as -->
+      <path d="M50 6 C72 6 88 32 88 56 C88 78 71 94 50 94 C29 94 12 78 12 56 C12 32 28 6 50 6 Z"
+            fill="url(#eg)" stroke="#FF6B1A" stroke-width="4"/>
+      <g fill="#0B0F16" opacity=".72">
+        <path d="M50 22 L60 34 L50 46 L40 34 Z"/>
+        <circle cx="31" cy="58" r="6"/><circle cx="69" cy="58" r="6"/>
+        <path d="M34 74 h32 v7 h-32 z"/>
+      </g>
+    </svg>
+    <div>
+      <span class="kana">デジモンカードゲーム</span>
+      <h1>Digimon<span class="dle">dle</span></h1>
+      <p class="tagline">One card a day out of <b id="poolsize">—</b> — every set from ST-1 to BT-26. You are guessing a <b>specific printing</b>, not a Digimon: there are 38 different cards called Agumon and they do not share a stat line.</p>
+    </div>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Game mode">
+      <button id="m-classic" aria-pressed="true">Classic</button>
+      <button id="m-art" aria-pressed="false">Art</button>
+      <button id="m-effect" aria-pressed="false">Effect</button>
+    </div>
+    <div class="seg" role="group" aria-label="Play mode">
+      <button id="p-daily" aria-pressed="true">Daily</button>
+      <button id="p-endless" aria-pressed="false">Endless</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="ghost" id="btn-new" hidden>New card</button>
+    <button class="ghost" id="btn-give">Give up</button>
+  </div>
+
+  <div class="guessbar">
+    <div class="field">
+      <input id="guess" type="text" placeholder="Try “bt14 agumon”, “greymon x”, or a full number like BT10-061…" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list">
+      <ul class="suggest" id="suggest" role="listbox" aria-label="Card suggestions"></ul>
+    </div>
+    <button class="go" id="submit">Guess</button>
+  </div>
+
+  <div class="status">
+    <div class="gauge" id="gauge" aria-hidden="true"></div>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div id="stage"></div>
+
+  <details class="how">
+    <summary>How to play</summary>
+    <div class="body">
+      <h4>Classic</h4>
+      <p>Name any card. Nine attributes are graded against the day's answer:</p>
+      <div class="legend">
+        <span><i style="background:var(--hit)"></i>Exact match</span>
+        <span><i style="background:var(--near)"></i>Partly right — some values overlap</span>
+        <span><i style="background:var(--miss)"></i>Nothing in common</span>
+        <span><i style="background:transparent">↑</i>The answer's number is <b>higher</b> (↓ = lower)</span>
+      </div>
+      <p><b>The dashed green tile is the strongest clue in the game.</b> Option and Tamer cards have no Level, DP, Form or Attribute — those fields simply do not exist on them. So when a tile comes back green with a dash, it is not saying "no data": it is saying <b>the answer does not have this field either</b>. Guess one Option card and five columns light up at once, and all 3,065 Digimon are gone.</p>
+      <p><b>Partial credit</b> is only for overlapping colours or types — a card that shares one of two colours, or one of its Digimon types. Everything else is right or wrong.</p>
+      <p><b>The Set arrow points in time,</b> not at the set number: ↑ means the answer comes from a later English release than the one you guessed. Sets from different lines interleave, so BT-18 and BT-19 both landed in November 2024 while EX-08 came between BT-19 and BT-20. Promos are just <b>P</b>, and limiteds just <b>LM</b> — each covers years of separate printings, so neither can point anywhere and both simply miss.</p>
+
+      <h4>Art</h4>
+      <p>A slit of the illustration, blown up past the point of recognition. Every guess widens it, down to a floor it never goes past — because the rules text on a Digimon card is printed <i>over</i> the art, and there is a thumbnail of the same Digimon tucked in the inherited-effect box at the bottom. The window stays between 24% and 52% of the card's height so neither ever comes into view.</p>
+
+      <h4>Effect</h4>
+      <p>The card's rules text, with its own name blanked out. Inherited and security effects come along too when the card has them. References to <i>other</i> cards are left intact — a text that names [Omnimon] is telling you something real.</p>
+
+      <p>Art and Effect do not show the comparison grid. The clue is the mode; all you get back is a list of what you have ruled out.</p>
+
+      <h4>Searching</h4>
+      <p>Type the way you talk about cards. <b>bt14 agumon</b> finds the Agumon from BT-14 without you having to remember it is 086. <b>greymon x</b> finds Greymon (X Antibody) — no brackets needed, and the plain Greymons sort below it. <b>metalgreymon ace</b> works too, even though ACE is printed on the card rather than being part of its name. Every word you type has to match <i>something</i> — the name, the set, or the number — so adding a word always narrows the list.</p>
+
+      <h4>Daily and Endless</h4>
+      <p><b>Daily</b> is the same card for everyone, from a fixed year-long schedule; it never repeats a card inside a year and keeps the same Digimon name at least two months apart. Your progress is saved, so you can close the tab. <b>Endless</b> deals a fresh card whenever you want one and works through the whole pool before it repeats anything — nothing is saved and nothing counts toward your streak.</p>
+    </div>
+  </details>
+
+  <footer>
+    An unofficial fan game, made for fun. Digimon is Akiyoshi Hongo's, and the card game is Bandai's.
+    Card data merged from <a href="https://github.com/TakaOtaku/Digimon-Card-App" target="_blank" rel="noopener">digimoncard.app</a> (MIT) and the
+    <a href="https://digimoncard.io/api-documentation" target="_blank" rel="noopener">digimoncard.io</a> public API.
+    Card images are loaded from those hosts as you play rather than copied here — which is why the newest set occasionally
+    falls back to a scan with a SAMPLE watermark on it.
+    <span id="built"></span>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ============================ DATA ============================ */
+/* DATA */
+
+/* ============================ SETUP ============================ */
+
+// cards.min.json ships short keys to keep the payload down; expand them once so
+// the comparison code below reads the same as the Python reference in compare.py
+const CARDS = RAW_CARDS.cards.map(c => ({
+  id:c.id, name:c.n, cardType:c.t, colors:c.c||[], level:c.lv, playCost:c.pc,
+  dp:c.dp, form:c.f, attribute:c.a, types:c.ty||[], setCode:c.s, rarity:c.r,
+  illustrator:c.i, imageHost:c.h
+}));
+const BY_ID = Object.fromEntries(CARDS.map(c => [c.id, c]));
+
+// Neither host is reliably clean: each stamps a SAMPLE watermark across a
+// different slice of the catalogue. detect_sample.py compares the two copies of
+// every card and flags the ones where digimoncard.app is the watermarked one,
+// so those get served from digimoncard.io instead.
+const HOST_APP = id => "https://digimoncard.app/assets/images/cards/" + id + ".webp";
+const HOST_IO  = id => "https://images.digimoncard.io/images/cards/" + id + ".jpg";
+const IMG   = id => (BY_ID[id] && BY_ID[id].imageHost === "io") ? HOST_IO(id) : HOST_APP(id);
+const IMG_2 = id => (BY_ID[id] && BY_ID[id].imageHost === "io") ? HOST_APP(id) : HOST_IO(id);
+// digimoncard.app answers a missing card with its SPA shell, which loads as a
+// broken image rather than 404-ing, so onerror is what actually covers BT-26.
+// No loading="lazy" here. The art-mode image is sized height:auto, so before it
+// loads it is 0px tall — and a zero-height lazy image never enters the viewport
+// far enough to start loading, so it stays 0px tall forever. Guess lists are a
+// few dozen images at most, so eager loading costs nothing worth the deadlock.
+const IMGTAG = (id, cls, extra) =>
+  `<img class="${cls}" src="${IMG(id)}" onerror="this.onerror=null;this.src='${IMG_2(id)}'" alt="" decoding="async" ${extra||""}>`;
+
+// Form used to sit between dp and attribute and is gone on purpose: it mostly
+// restated Level (Rookie/Champion/Ultimate/Mega track Lv.3/4/5/6 almost one to
+// one) and its "same evolution family" partial was too vague to act on. Rarity
+// took the slot — plain right or wrong, with promos being their own rarity P.
+const COLS = [
+  {k:"cardType",  lab:"Card type", kind:"scalar"},
+  {k:"colors",    lab:"Color",     kind:"set", chips:true},
+  {k:"level",     lab:"Level",     kind:"num"},
+  {k:"playCost",  lab:"Play cost", kind:"num"},
+  {k:"dp",        lab:"DP",        kind:"num"},
+  {k:"attribute", lab:"Attribute", kind:"scalar"},
+  {k:"types",     lab:"Type",      kind:"set"},
+  {k:"rarity",    lab:"Rarity",    kind:"scalar"},
+  {k:"setCode",   lab:"Set",       kind:"setcode"}
+];
+
+/* ============================ HELPERS ============================ */
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+const empty = v => v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length);
+
+function hash(x){ let h = x*2654435761 % 4294967296; h ^= h>>>13; h = (h*1274126177)>>>0; return h>>>0; }
+function rngFrom(seed){ let s = hash(seed)||1; return () => { s = (s*1664525 + 1013904223)>>>0; return s/4294967296; }; }
+function shuffled(list, seed){
+  const a = list.slice(), rnd = rngFrom(seed);
+  for (let i=a.length-1; i>0; i--){ const j = Math.floor(rnd()*(i+1)); [a[i],a[j]] = [a[j],a[i]]; }
+  return a;
+}
+
+// day 0 of the schedule, counted in UTC so everyone flips over together
+const EPOCH = Math.floor(Date.parse(SCHEDULE.startDate + "T00:00:00Z")/86400000);
+function dayIndex(){
+  const n = new Date();
+  return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())/86400000) - EPOCH;
+}
+
+function dailyAnswer(mode, day){
+  const list = SCHEDULE.modes[mode];
+  if (!list || !list.length) return null;
+  // past the end of the roll, keep going by cycling with a per-lap reshuffle
+  if (day >= 0 && day < list.length) return BY_ID[list[day]];
+  const lap = Math.floor(day/list.length);
+  const idx = ((day % list.length) + list.length) % list.length;
+  return BY_ID[shuffled(list, hash(lap*7919 + mode.length))[idx]];
+}
+
+/* ============================ COMPARISON ============================
+   Mirrors compare.py exactly. The rule that carries the whole mixed pool:
+   if the field is missing on BOTH sides it counts as CORRECT, because that
+   genuinely tells you the answer is a card without that field.
+   ==================================================================== */
+
+function gradeScalar(g, a){
+  if (empty(g) && empty(a)) return {cls:"hit", na:true};
+  return {cls: g === a ? "hit" : "miss"};
+}
+function gradeNum(g, a){
+  if (empty(g) && empty(a)) return {cls:"hit", na:true};
+  if (empty(g) || empty(a))  return {cls:"miss"};
+  if (g === a) return {cls:"hit"};
+  return {cls:"miss", arrow: a > g ? "↑" : "↓"};
+}
+function gradeSet(g, a){
+  g = g||[]; a = a||[];
+  if (!g.length && !a.length) return {cls:"hit", na:true};
+  const same = g.length === a.length && g.every(v => a.includes(v));
+  if (same) return {cls:"hit"};
+  return {cls: g.some(v => a.includes(v)) ? "near" : "miss"};
+}
+// Sets point at release order rather than matching by name. SET_DATES holds the
+// English release month per set; "P" and "LM" are deliberately absent from it,
+// because "P" is every promo ever printed and "LM" covers LM-01 through LM-08 —
+// both span years, so neither has a date to point at and both just miss.
+function gradeSetCode(g, a){
+  if (g === a) return {cls:"hit"};
+  const dg = SET_DATES[g], da = SET_DATES[a];
+  if (!dg || !da) return {cls:"miss"};
+  return {cls:"miss", arrow: da > dg ? "↑" : "↓"};
+}
+const GRADERS = {scalar:gradeScalar, num:gradeNum, set:gradeSet, setcode:gradeSetCode};
+
+function grade(guess, answer, col){ return GRADERS[col.kind](guess[col.k], answer[col.k]); }
+
+/* ============================ STATE ============================ */
+
+const SAVE = "dgdle.v1";
+const loadStore = () => { try { return JSON.parse(localStorage.getItem(SAVE)) || {}; } catch(e){ return {}; } };
+const saveStore = o => { try { localStorage.setItem(SAVE, JSON.stringify(o)); } catch(e){} };
+
+const POOL = {
+  classic: CARDS,
+  art:     CARDS,
+  effect:  CARDS.filter(c => EFFECTS[c.id])
+};
+
+const S = {
+  mode:"classic",      // classic | art | effect
+  play:"daily",        // daily | endless
+  day:dayIndex(),
+  answer:null,
+  guesses:[],
+  over:false, won:false,
+  hints:{one:false, two:false},
+  fresh:0,
+  endlessQueue:{},     // mode -> remaining shuffled ids, so endless never repeats
+  endlessSeed:Math.floor(Math.random()*1e9)
+};
+
+function stateKey(){ return S.mode + ":d" + S.day; }
+
+function nextEndless(mode){
+  let q = S.endlessQueue[mode];
+  if (!q || !q.length){
+    q = shuffled(POOL[mode].map(c => c.id), S.endlessSeed + mode.length);
+    S.endlessSeed++;
+  }
+  S.endlessQueue[mode] = q;
+  return BY_ID[q.pop()];
+}
+
+function startRound(restore){
+  S.answer = S.play === "daily" ? dailyAnswer(S.mode, S.day) : nextEndless(S.mode);
+  S.guesses = []; S.over = false; S.won = false; S.fresh = 0;
+  S.hints = {one:false, two:false};
+  if (S.play === "daily" && restore){
+    const saved = loadStore()[stateKey()];
+    if (saved && saved.a === S.answer.id){
+      S.guesses = (saved.g||[]).map(id => BY_ID[id]).filter(Boolean);
+      S.over = !!saved.o; S.won = !!saved.w;
+      S.hints = {one:!!(saved.h||[])[0], two:!!(saved.h||[])[1]};
+    }
+  }
+  render();
+}
+
+function persist(){
+  if (S.play !== "daily") return;
+  const store = loadStore();
+  store[stateKey()] = {a:S.answer.id, g:S.guesses.map(c => c.id), o:S.over, w:S.won,
+                       h:[S.hints.one, S.hints.two]};
+  // keep localStorage from growing forever
+  Object.keys(store).forEach(k => {
+    const m = k.match(/:d(-?\d+)$/);
+    if (m && S.day - (+m[1]) > 7) delete store[k];
+  });
+  saveStore(store);
+}
+
+function stats(){ return loadStore().stats || {played:0, won:0, streak:0, best:0, last:null}; }
+function recordResult(won){
+  if (S.play !== "daily") return;
+  const store = loadStore();
+  const st = store.stats || {played:0, won:0, streak:0, best:0, last:null};
+  const tag = S.day + ":" + S.mode;
+  if (st.last === tag) return;
+  st.last = tag; st.played++;
+  if (won){ st.won++; st.streak++; st.best = Math.max(st.best, st.streak); } else { st.streak = 0; }
+  store.stats = st; saveStore(store);
+}
+
+/* ============================ RENDER ============================ */
+
+let toastTimer;
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1900);
+}
+
+const chipsHTML = colors => (colors||[]).map(c =>
+  `<span class="chip" style="background:var(--c-${esc(c)},#888)" title="${esc(c)}"></span>`).join("");
+
+// the memory gauge from the actual card game, used as the guess counter
+function renderGauge(){
+  const n = S.guesses.length;
+  const cells = [];
+  for (let i=0; i<=10; i++){
+    const cls = i === 0 ? "zero" : (i < n ? "spent" : (i === n ? "now" : ""));
+    cells.push(`<i class="${cls}">${i}</i>`);
+  }
+  $("#gauge").innerHTML = cells.join("");
+  const label = S.play === "endless"
+    ? `Endless · <b>${n}</b> guess${n===1?"":"es"}`
+    : `Memory <b>${Math.min(n,10)}</b> · ${n} guess${n===1?"":"es"}`;
+  const st = stats();
+  const streak = (S.play === "daily" && st.streak) ? ` · streak <b>${st.streak}</b>` : "";
+  $("#count").innerHTML = label + streak;
+}
+
+const HINTS = {
+  classic:[{at:5, lab:"Illustrator", get:a => a.illustrator || "uncredited"},
+           {at:9, lab:"Art", art:true}],
+  art:    [{at:4, lab:"Card type", get:a => a.cardType},
+           {at:8, lab:"Color", get:a => `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`}],
+  effect: [{at:5, lab:"Color", get:a => `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`},
+           {at:9, lab:"Art", art:true}]
+};
+
+function hintHTML(){
+  const list = HINTS[S.mode], n = S.guesses.length, a = S.answer;
+  return `<div class="hints">` + list.map((h, i) => {
+    const slot = i === 0 ? "one" : "two";
+    const open = S.hints[slot] || S.over;
+    const ready = n >= h.at;
+    if (h.art){
+      const zoom = Math.max(1.9, 3.8 - Math.max(0, n - h.at)*0.22);
+      const inner = open
+        ? `<div class="peek" style="--z:${zoom}">${IMGTAG(a.id,"","")}</div>`
+        : `<div class="peek locked"><span>?</span></div>`;
+      return `<div class="hint hint-art ${open?"open":""}">${inner}<div>
+          <span class="lab">${h.lab}</span>
+          ${open ? `<span class="val">pulls back as you guess</span>`
+                 : ready ? `<button class="claim" data-hint="${slot}">Reveal</button>`
+                         : `<span class="locked-val">after ${h.at} guesses</span>`}
+        </div></div>`;
+    }
+    return `<div class="hint ${open?"open":""}"><span class="lab">${h.lab}</span>
+      ${open ? `<span class="val">${h.get(a)}</span>`
+             : ready ? `<button class="claim" data-hint="${slot}">Reveal</button>`
+                     : `<span class="locked-val">after ${h.at} guesses</span>`}</div>`;
+  }).join("") + `</div>`;
+}
+
+function tileHTML(guess, col, res){
+  const v = guess[col.k];
+  let body;
+  if (res.na){
+    body = `<span class="dash">—</span><span class="nalab">neither has this</span>`;
+  } else if (col.chips){
+    body = `<span class="chips">${chipsHTML(v)}</span>${esc((v||[]).join(" / ")) || "—"}`;
+  } else if (Array.isArray(v)){
+    body = esc(v.join(" · ")) || "—";
+  } else {
+    body = empty(v) ? "—" : esc(v);
+  }
+  const arrow = res.arrow ? `<span class="arrow">${res.arrow}</span>` : "";
+  return `<div class="tile ${res.cls} ${res.na?"na":""}">${body}${arrow}</div>`;
+}
+
+function gridHTML(){
+  const head = `<div class="row head">${COLS.map(c => `<span>${c.lab}</span>`).join("")}</div>`;
+  const rows = S.guesses.slice().reverse().map((g, ri) => {
+    const isFresh = ri < S.fresh;
+    const name = `<div class="namecell">${IMGTAG(g.id,"avatar")}
+        <span class="n">${esc(g.name)}</span><span class="code">${esc(g.id)}</span></div>`;
+    const tiles = COLS.map((col, i) => {
+      const res = grade(g, S.answer, col);
+      const t = tileHTML(g, col, res);
+      return isFresh ? t.replace('class="tile', `style="--d:${i*55}ms" class="tile flip`) : t;
+    }).join("");
+    return `<div class="row">${name}</div><div class="row">${tiles}</div>`;
+  }).join("");
+  return `<div class="board"><div class="grid">${head}${rows}</div></div>`;
+}
+
+/* 4.6x turned out to be too tight to be fun: on a card like Wormmon (BT20-065)
+   the opening frame was nothing but night sky. A contact sheet of the widest
+   band across 12 scheduled cards showed the subject filling it almost every
+   time, so the run starts closer to that and reaches it by the 7th guess. */
+const ART_START = 3.8, ART_STEP = 0.30, ART_FLOOR = 1.7;
+
+function artHTML(){
+  // once it is over the full card is on the result panel, so the slit retires
+  if (S.over) return "";
+  const n = S.guesses.length;
+  const z = Math.max(ART_FLOOR, ART_START - n*ART_STEP);
+  const b = Math.max(0, 2.6 - n*0.42);
+  const atFloor = z <= ART_FLOOR;
+  return `<div class="artstage"><div class="artbox" style="--z:${z};--b:${b}px">
+      ${IMGTAG(S.answer.id,"")}
+    </div></div>
+    <p class="artnote">${atFloor ? "widest view — this is all you get" : `${z.toFixed(1)}× · widens with every guess`}</p>`;
+}
+
+function wrongsHTML(){
+  if (!S.guesses.length) return "";
+  const rows = S.guesses.slice().reverse()
+    .filter(g => g.id !== S.answer.id)
+    .map(g => `<div class="wrong">${IMGTAG(g.id,"")}
+        <span class="n">${esc(g.name)}</span><span class="c">${esc(g.id)}</span></div>`).join("");
+  return `<div class="wrongs">${rows}</div>`;
+}
+
+function effectHTML(){
+  const e = EFFECTS[S.answer.id] || {};
+  const blk = (lab, txt) => txt ? `<div class="blk"><span class="lab">${lab}</span><div class="txt">${esc(txt).replace(/█+/g,'<span class="mask">████</span>')}</div></div>` : "";
+  return `<div class="rules">
+    ${blk("Effect", e.e)}${blk("Inherited effect", e.i)}${blk("Security effect", e.s)}
+  </div>`;
+}
+
+function resultHTML(){
+  const a = S.answer, n = S.guesses.length;
+  const jp = "";
+  const facts = [
+    ["Card type", a.cardType],
+    ["Color", `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`],
+    ["Level", empty(a.level) ? "—" : "Lv." + a.level],
+    ["Play cost", empty(a.playCost) ? "—" : a.playCost],
+    ["DP", empty(a.dp) ? "—" : a.dp],
+    ["Attribute", a.attribute || "—"],
+    ["Type", a.types.join(" · ") || "—"],
+    ["Rarity", a.rarity || "—"],
+    ["Set", esc(a.setCode) + (SET_DATES[a.setCode] ? ` · ${SET_DATES[a.setCode]}` : "")],
+    ["Illustrator", a.illustrator || "uncredited"]
+  ].map(([l,v]) => `<div class="fact"><span class="lab">${l}</span><span class="val">${v}</span></div>`).join("");
+
+  const verdict = S.won
+    ? (n === 1 ? "First guess. Suspicious." : `Got it in <b>${n}</b> guesses.`)
+    : `The answer was hiding here the whole time.`;
+
+  return `<div class="result ${S.won?"win":"lose"}">
+    <div class="result-inner">
+      ${IMGTAG(a.id,"cardshot")}
+      <div class="result-body">
+        <h2>${esc(a.name)}</h2>
+        <p class="sub">${esc(a.id)} · ${esc(a.setCode)}${a.rarity?" · "+esc(a.rarity):""}</p>
+        <p>${verdict}</p>
+        <div class="factlist">${facts}</div>
+        <div class="actions">
+          ${S.play==="daily" ? `<button class="ghost" id="btn-share">Share result</button>` : ""}
+          <button class="ghost" id="btn-again">${S.play==="daily" ? "Play endless" : "Next card"}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render(){
+  $("#poolsize").textContent = POOL[S.mode].length.toLocaleString("en");
+  renderGauge();
+
+  let html = "";
+  if (S.mode === "art")    html += artHTML();
+  if (S.mode === "effect") html += effectHTML();
+  // once the round is over the result panel shows the whole card, so a blurred
+  // peek and a half-revealed illustrator sitting above it are just noise
+  if (!S.over) html += hintHTML();
+  if (S.over) html += resultHTML();
+  // Classic earns the full grid. Art and Effect keep their own clue as the
+  // point of the mode and only list what you have already ruled out.
+  if (S.guesses.length) html += (S.mode === "classic" ? gridHTML() : wrongsHTML());
+  $("#stage").innerHTML = html;
+  S.fresh = 0;
+
+  $("#guess").disabled = S.over;
+  $("#submit").disabled = S.over;
+  $("#btn-give").hidden = S.over;
+  $("#btn-new").hidden = S.play !== "endless";
+
+  $("#stage").querySelectorAll(".claim").forEach(b => {
+    b.onclick = () => { S.hints[b.dataset.hint] = true; persist(); render(); };
+  });
+  const share = $("#btn-share"); if (share) share.onclick = doShare;
+  const again = $("#btn-again");
+  if (again) again.onclick = () => { if (S.play === "daily") setPlay("endless"); else startRound(false); };
+}
+
+/* ============================ ACTIONS ============================ */
+
+function submitGuess(id){
+  const card = BY_ID[id];
+  if (!card || S.over) return;
+  if (S.guesses.some(g => g.id === card.id)){ toast("Already guessed that one"); return; }
+  S.guesses.push(card);
+  S.fresh = 1;
+  if (card.id === S.answer.id){ S.over = true; S.won = true; recordResult(true); }
+  persist();
+  $("#guess").value = "";
+  closeSuggest();
+  render();
+}
+
+function giveUp(){
+  if (S.over) return;
+  S.over = true; S.won = false;
+  recordResult(false); persist(); render();
+}
+
+const EMOJI = {hit:"🟩", near:"🟨", miss:"⬛"};
+function doShare(){
+  const label = {classic:"Classic", art:"Art", effect:"Effect"}[S.mode];
+  const head = `Digimondle ${label} #${S.day+1} — ${S.won ? S.guesses.length : "X"}`;
+  // Only Classic gets the emoji grid. Art and Effect never showed the player a
+  // grid, so posting one would be sharing information they never had.
+  const body = S.mode === "classic"
+    ? S.guesses.map(g => COLS.map(c => EMOJI[grade(g, S.answer, c).cls]).join("")).join("\n")
+    : (S.won ? "🟩".padStart(S.guesses.length, "⬛") : "⬛".repeat(S.guesses.length));
+  const text = head + "\n" + body;
+  const done = () => toast("Copied to clipboard");
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => toast("Copy failed"));
+  else { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t);
+         t.select(); document.execCommand("copy"); t.remove(); done(); }
+}
+
+/* ---------- autocomplete ---------- */
+
+/* Nobody says "Agumon, BT14-086". They say "bt14 agumon", and they say
+   "greymon x" rather than typing out "Greymon (X Antibody)". So the query is
+   split into tokens and every token has to land somewhere — on the name, the
+   card number or the set code — with name hits scoring above number hits.
+   That ranking is what puts Greymon (X Antibody) above the EX-set Greymons for
+   "greymon x": the x in "EX5-011" is a real but much weaker hit than the x in
+   the name. */
+// ACE is printed on the card face but is not part of any card's name, so it
+// rides along as an extra name token rather than a field of its own.
+const SEARCH = RAW_CARDS.cards.map(c => ({
+  id:c.id, n:norm(c.n) + (c.ace ? "ace" : ""), i:norm(c.id), s:norm(c.s)
+}));
+const tokenize = q => q.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+function tokenScore(s, t){
+  let best = 0;
+  if (s.i === t) best = 10;          // the whole card number, dash and all
+  else if (s.s === t) best = 4;      // exact set code: "bt14", "st1"
+  if (s.n.startsWith(t)) best = Math.max(best, 3);
+  else if (s.n.includes(t)) best = Math.max(best, 2);
+  if (!best && (s.i.includes(t) || s.s.includes(t))) best = 1;
+  return best;
+}
+
+function scoreCard(s, tokens, full){
+  let total = full && s.i === full ? 20 : 0;
+  for (const t of tokens){
+    const sc = tokenScore(s, t);
+    if (!sc) return 0;               // every token must land, or it is not a match
+    total += sc;
+  }
+  return total;
+}
+
+let sug = [], sugIdx = -1;
+
+function closeSuggest(){
+  sug = []; sugIdx = -1;
+  $("#suggest").innerHTML = "";
+  $("#guess").setAttribute("aria-expanded","false");
+}
+
+function openSuggest(q){
+  const tokens = tokenize(q);
+  if (!tokens.length){ closeSuggest(); return; }
+  // The whole-number bonus only applies when the query really is one run of
+  // characters. norm() strips whitespace, so "bt10 61" would otherwise collapse
+  // to "bt1061" and score an exact-id hit on Mistymon (BT1-061) instead.
+  const full = /\s/.test(q.trim()) ? null : norm(q);
+  const guessed = new Set(S.guesses.map(g => g.id));
+  const hits = [];
+  for (const s of SEARCH){
+    if (guessed.has(s.id)) continue;
+    const score = scoreCard(s, tokens, full);
+    if (score) hits.push([score, s.id]);
+  }
+  // ties break on card number so the same query always lists in the same order
+  hits.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? -1 : 1));
+  sug = hits.slice(0, 8).map(h => h[1]);
+  sugIdx = sug.length ? 0 : -1;
+  paintSuggest();
+}
+
+function paintSuggest(){
+  const ul = $("#suggest");
+  ul.innerHTML = sug.map((id, i) => {
+    const c = BY_ID[id];
+    return `<li role="option" data-id="${esc(id)}" aria-selected="${i===sugIdx}">
+      ${IMGTAG(id,"sug-art")}
+      <span class="nm">${esc(c.name)}</span>
+      <span class="meta">
+        <span class="chips">${chipsHTML(c.colors)}</span>
+        <span class="kind">${esc(c.cardType)}</span>
+        <span class="code">${esc(c.id)}</span>
+      </span></li>`;
+  }).join("");
+  $("#guess").setAttribute("aria-expanded", sug.length ? "true" : "false");
+  ul.querySelectorAll("li").forEach(li => {
+    li.onmousedown = e => { e.preventDefault(); submitGuess(li.dataset.id); };
+  });
+}
+
+function moveSug(d){
+  if (!sug.length) return;
+  sugIdx = (sugIdx + d + sug.length) % sug.length;
+  paintSuggest();
+  const el = $("#suggest").children[sugIdx];
+  if (el) el.scrollIntoView({block:"nearest"});
+}
+
+/* ---------- mode switching ---------- */
+
+function setMode(m){
+  S.mode = m;
+  ["classic","art","effect"].forEach(k => $("#m-"+k).setAttribute("aria-pressed", String(k===m)));
+  $("#guess").value = ""; closeSuggest();
+  startRound(true);
+}
+function setPlay(p){
+  S.play = p;
+  ["daily","endless"].forEach(k => $("#p-"+k).setAttribute("aria-pressed", String(k===p)));
+  $("#guess").value = ""; closeSuggest();
+  startRound(true);
+}
+
+/* ============================ WIRING ============================ */
+
+$("#guess").addEventListener("input", e => openSuggest(e.target.value));
+$("#guess").addEventListener("keydown", e => {
+  if (e.key === "ArrowDown"){ e.preventDefault(); moveSug(1); }
+  else if (e.key === "ArrowUp"){ e.preventDefault(); moveSug(-1); }
+  else if (e.key === "Enter"){ e.preventDefault(); if (sugIdx >= 0) submitGuess(sug[sugIdx]); }
+  else if (e.key === "Escape") closeSuggest();
+});
+$("#guess").addEventListener("blur", () => setTimeout(closeSuggest, 120));
+$("#submit").onclick = () => { if (sugIdx >= 0) submitGuess(sug[sugIdx]); else $("#guess").focus(); };
+$("#btn-give").onclick = giveUp;
+$("#btn-new").onclick = () => startRound(false);
+["classic","art","effect"].forEach(k => $("#m-"+k).onclick = () => setMode(k));
+["daily","endless"].forEach(k => $("#p-"+k).onclick = () => setPlay(k));
+
+if (META.builtFrom) $("#built").textContent = " Card data built " + META.builtFrom.slice(0,10) + ".";
+startRound(true);
+$("#guess").focus();
+</script>
+</body>
+</html>
