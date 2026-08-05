@@ -143,6 +143,17 @@ h1 .dle{color:var(--amber)}
 .suggest .meta{margin-left:auto; display:flex; align-items:center; gap:8px}
 .suggest .code{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
 .suggest .kind{font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); border:1px solid var(--rule); padding:2px 6px}
+/* rarity badge, tinted from SR upward so the scarce printings stand out at a
+   glance without another lookup */
+.suggest .rar{
+  font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.06em;
+  min-width:34px; text-align:center; padding:2px 5px;
+  border:1px solid var(--rule); color:var(--muted);
+}
+.suggest .r-SR{border-color:var(--cyan-dim); color:var(--cyan)}
+.suggest .r-UR,
+.suggest .r-SEC{border-color:var(--amber); color:var(--amber)}
+.suggest .r-P{border-color:var(--near); color:var(--near)}
 
 /* colour chips — never rendered as bare text, so a "Green" value can't be
    mistaken for a green (correct) tile */
@@ -189,7 +200,7 @@ h1 .dle{color:var(--amber)}
 .claim:hover{background:var(--cyan); color:var(--on-state)}
 .hint-art{gap:12px; padding:8px 13px 8px 8px}
 .peek{width:84px; height:84px; flex:none; overflow:hidden; border:1.5px solid var(--rule); background:var(--sunk)}
-.peek img{display:block; width:100%; height:100%; object-fit:cover; transform:scale(var(--z,3.4)); transform-origin:50% 32%; filter:blur(1px)}
+.peek img{display:block; width:100%; height:100%; object-fit:cover; transform:scale(var(--z,3.4)); transform-origin:50% 32%}
 .peek.locked{display:flex; align-items:center; justify-content:center; border-style:dashed}
 .peek.locked span{font-family:var(--display); font-size:30px; color:var(--rule)}
 
@@ -241,9 +252,8 @@ h1 .dle{color:var(--amber)}
   position:absolute; left:50%; top:50%; width:100%; height:auto; display:block;
   aspect-ratio:430/601;   /* so the box has its real height before the art lands */
   transform-origin:50% 38%;
-  transform:translate(-50%,-38%) scale(var(--z,4.6));
-  filter:blur(var(--b,3px)) saturate(1.06);
-  transition:transform .65s cubic-bezier(.3,.8,.4,1), filter .65s ease;
+  transform:translate(-50%,-38%) scale(var(--z,3.8));
+  transition:transform .65s cubic-bezier(.3,.8,.4,1);
 }
 .artbox::after{
   content:""; position:absolute; inset:0; pointer-events:none;
@@ -902,9 +912,10 @@ function artHTML(){
   if (S.over) return "";
   const n = S.guesses.length;
   const z = Math.max(ART_FLOOR, ART_START - n*ART_STEP);
-  const b = Math.max(0, 2.6 - n*0.42);
   const atFloor = z <= ART_FLOOR;
-  return `<div class="artstage"><div class="artbox" style="--z:${z};--b:${b}px">
+  // No blur. The crop is doing the work already, and stacking a blur on top of
+  // a 3.8x zoom just made the early frames unreadable rather than hard.
+  return `<div class="artstage"><div class="artbox" style="--z:${z}">
       ${IMGTAG(S.answer.id,"")}
     </div></div>
     <p class="artnote">${atFloor ? "widest view — this is all you get" : `${z.toFixed(1)}× · widens with every guess`}</p>`;
@@ -971,8 +982,8 @@ function render(){
   let html = "";
   if (S.mode === "art")    html += artHTML();
   if (S.mode === "effect") html += effectHTML();
-  // once the round is over the result panel shows the whole card, so a blurred
-  // peek and a half-revealed illustrator sitting above it are just noise
+  // once the round is over the result panel shows the whole card, so a cropped
+  // peek and a half-blanked name sitting above it are just noise
   if (!S.over) html += hintHTML();
   if (S.over) html += resultHTML();
   // Classic earns the full grid. Art and Effect keep their own clue as the
@@ -1107,6 +1118,7 @@ function paintSuggest(){
         <span class="chips">${chipsHTML(c.colors)}</span>
         <span class="kind">${esc(c.cardType)}</span>
         <span class="code">${esc(c.id)}</span>
+        <span class="rar r-${esc(c.rarity || "none")}">${esc(c.rarity || "—")}</span>
       </span></li>`;
   }).join("");
   $("#guess").setAttribute("aria-expanded", sug.length ? "true" : "false");

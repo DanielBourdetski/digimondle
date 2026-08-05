@@ -323,6 +323,10 @@ hit than the `x` in the name.
 ACE rides along as an extra name token. It is printed on the card face but is
 not part of any card's name, so `metalgreymon ace` would otherwise find nothing.
 
+Each suggestion row shows the card's thumbnail, colour chips, card type, number
+and rarity, tinted from SR upward so the scarce printings stand out without a
+second lookup.
+
 One trap worth remembering: the whole-query exact-id bonus only applies when the
 query has no spaces. `norm()` strips whitespace, so `"bt10 61"` collapses to
 `"bt1061"` and scored a spurious exact-id hit on Mistymon (BT1-061).
@@ -358,3 +362,7 @@ on a Digimon card is printed **over** the art at about 58% of the card height,
 and there is a thumbnail of the same Digimon in the inherited-effect box near the
 bottom. The slit stays inside 24%–52% of the card height at every zoom; a square
 window at the same widest setting would have run past 62% and shown the text.
+
+There is no blur, on either the art window or the hint peek. The crop already
+does the work, and stacking a blur on top of a 3.8x zoom made the early frames
+unreadable rather than hard.
