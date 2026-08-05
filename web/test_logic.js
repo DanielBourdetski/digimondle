@@ -130,6 +130,12 @@ check("promo -> common points down",
   grade(byRarity("P"), byRarity("C"), rarCol).arrow, DOWN);
 check("secret -> promo still points up",
   grade(byRarity("SEC"), byRarity("P"), rarCol).arrow, UP);
+check("super rare -> ultra rare points up",
+  grade(byRarity("SR"), byRarity("UR"), rarCol).arrow, UP);
+check("ultra rare -> secret points up",
+  grade(byRarity("UR"), byRarity("SEC"), rarCol).arrow, UP);
+check("secret -> ultra rare points down",
+  grade(byRarity("SEC"), byRarity("UR"), rarCol).arrow, DOWN);
 checkThat("every LM card ships as a promo rarity",
   CARDS.filter(c => c.setCode === "LM").every(c => c.rarity === "P"));
 

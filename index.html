@@ -617,12 +617,13 @@ function gradeNum(g, a){
   if (g === a) return {cls:"hit"};
   return {cls:"miss", arrow: a > g ? "↑" : "↓"};
 }
-// Rarity is ordered so it can point, not just match. The tail is a judgement
-// call rather than a pull-rate fact: promos are not "rarer" than a Secret Rare,
-// they come from a different channel entirely — but a total order is what an
-// arrow needs, and promos on top is the reading that matches how players talk.
-// The whole LM line is treated as promo, so its cards ship with rarity "P".
-const RARITY_ORDER = {C:1, U:2, R:3, SR:4, SEC:5, UR:6, P:7};
+// Rarity is ordered so it can point, not just match. UR sits between SR and SEC.
+// The tail is a judgement call rather than a pull-rate fact: promos are not
+// "rarer" than a Secret Rare, they come from a different channel entirely — but
+// a total order is what an arrow needs, and promos on top is the reading that
+// matches how players talk. The whole LM line counts as promo, so its cards
+// ship with rarity "P".
+const RARITY_ORDER = {C:1, U:2, R:3, SR:4, UR:5, SEC:6, P:7};
 function gradeRarity(g, a){
   if (empty(g) && empty(a)) return {cls:"hit", na:true};
   if (g === a) return {cls:"hit"};

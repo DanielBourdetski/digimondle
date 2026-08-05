@@ -203,7 +203,7 @@ the strongest single move in the game.
 Partial credit is only for `colors` and `types`, on any overlap. Everything else
 is right or wrong.
 
-Rarity points too, on `C < U < R < SR < SEC < UR < P`. The tail is a judgement
+Rarity points too, on `C < U < R < SR < UR < SEC < P`. The tail is a judgement
 call rather than a pull-rate fact — promos are not "rarer" than a Secret Rare,
 they come from a different channel — but an arrow needs a total order, and
 promos on top is how players talk about them. The whole **LM** line is treated as

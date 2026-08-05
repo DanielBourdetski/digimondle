@@ -76,12 +76,12 @@ def _set(guess, answer):
     return ABSENT
 
 
-# Rarity is ordered so it can point, not just match. The tail is a judgement
-# call rather than a pull-rate fact: promos are not "rarer" than a Secret Rare,
-# they come from a different channel entirely — but a total order is what an
-# arrow needs, and promos sitting on top is the reading that matches how players
-# talk about them. UR is 4 cards, all from BT-25 and EX-12.
-RARITY_ORDER = {"C": 1, "U": 2, "R": 3, "SR": 4, "SEC": 5, "UR": 6, "P": 7}
+# Rarity is ordered so it can point, not just match. UR sits between SR and SEC.
+# The tail is a judgement call rather than a pull-rate fact: promos are not
+# "rarer" than a Secret Rare, they come from a different channel entirely — but
+# a total order is what an arrow needs, and promos on top is the reading that
+# matches how players talk about them. UR is 4 cards, all from BT-25 and EX-12.
+RARITY_ORDER = {"C": 1, "U": 2, "R": 3, "SR": 4, "UR": 5, "SEC": 6, "P": 7}
 
 
 def _rarity(guess, answer):
