@@ -107,6 +107,21 @@ h1 .dle{color:var(--amber)}
 .ghost:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
 .spacer{flex:1 1 auto}
 
+/* ---------- daily streak reminder ---------- */
+.remind{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  border-left:2px solid var(--cyan); background:var(--panel);
+  padding:9px 14px; margin:14px 0 0; font-size:13px; color:var(--muted);
+}
+.remind.done{border-left-color:var(--hit); color:var(--ink)}
+.remind .pips{display:flex; gap:12px; flex-wrap:wrap}
+.remind .pip{
+  font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:700;
+  color:var(--muted); font-family:var(--mono);
+}
+.remind .pip.on{color:var(--hit)}
+.remind .msg{font-size:12.5px}
+
 /* ---------- endless pool filters ---------- */
 .filters{
   border:1.5px solid var(--rule); background:var(--panel); padding:14px 16px; margin:0 0 14px;
@@ -203,6 +218,21 @@ h1 .dle{color:var(--amber)}
 .gauge i.now{background:var(--cyan); color:var(--on-state); font-weight:700}
 .count{font-family:var(--mono); font-size:12.5px; color:var(--muted); letter-spacing:.03em}
 .count b{color:var(--ink); font-size:14.5px}
+
+/* ---------- streak marker ---------- */
+.streak{
+  display:inline-flex; align-items:center; gap:7px;
+  border:1.5px solid var(--tone); padding:3px 10px 3px 7px;
+  animation:hatch .45s cubic-bezier(.2,.8,.3,1) both;
+}
+.streak svg{width:15px; height:19px; flex:none; display:block}
+.streak b{font-family:var(--mono); font-size:14px; color:var(--tone)}
+.streak .tier{
+  font-size:9px; letter-spacing:.16em; text-transform:uppercase;
+  font-weight:700; color:var(--muted);
+}
+@keyframes hatch{from{opacity:0; transform:translateY(3px) scale(.9)}to{opacity:1; transform:none}}
+@media (prefers-reduced-motion:reduce){.streak{animation:none}}
 
 /* ---------- hints ---------- */
 .hints{display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 20px}
@@ -412,6 +442,7 @@ footer a{color:var(--cyan)}
     <button class="ghost" id="btn-give">Give up</button>
   </div>
 
+  <div id="remind"></div>
   <div id="filters"></div>
 
   <div class="guessbar">
@@ -426,6 +457,7 @@ footer a{color:var(--cyan)}
   <div class="status">
     <div class="gauge" id="gauge" aria-hidden="true"></div>
     <span class="count" id="count"></span>
+    <span id="streak"></span>
   </div>
 
   <div id="stage"></div>
@@ -455,6 +487,10 @@ footer a{color:var(--cyan)}
 
       <h4>Searching</h4>
       <p>Type the way you talk about cards. <b>bt14 agumon</b> finds the Agumon from BT-14 without you having to remember it is 086. <b>greymon x</b> finds Greymon (X Antibody) — no brackets needed, and the plain Greymons sort below it. <b>metalgreymon ace</b> works too, even though ACE is printed on the card rather than being part of its name. Every word you type has to match <i>something</i> — the name, the set, or the number — so adding a word always narrows the list.</p>
+
+      <h4>The streak</h4>
+      <p>A day counts only when <b>all three daily modes</b> fall — Classic, Art and Effect. Solving one and walking away does not take the day, which is why the bar at the top names the ones still outstanding. Give up on a mode and that mode simply stays unsolved; you can come back to it until midnight UTC.</p>
+      <p>The marker beside the memory gauge <b>digivolves</b> as the run grows: Fresh at one day, then In-Training, Rookie, Champion, Ultimate and Mega at twenty. Miss a day entirely and it hatches back to nothing — though your best run is kept.</p>
 
       <h4>Daily and Endless</h4>
       <p><b>Daily</b> is the same card for everyone, from a fixed year-long schedule; it never repeats a card inside a year and keeps the same Digimon name at least two months apart. Your progress is saved, so you can close the tab. <b>Endless</b> deals a fresh card whenever you want one and works through the whole pool before it repeats anything — nothing is saved and nothing counts toward your streak.</p>
@@ -832,15 +868,83 @@ function persist(){
   saveStore(store);
 }
 
-function stats(){ return loadStore().stats || {played:0, won:0, streak:0, best:0, last:null}; }
+const MODES = ["classic", "art", "effect"];
+const blankStats = () => ({played:0, won:0, streak:0, best:0, streakDay:null, days:{}});
+function stats(){ return Object.assign(blankStats(), loadStore().stats); }
+
+/* A day is earned by solving *all three* daily modes.
+ *
+ * The old rule keyed off `day + ":" + mode`, so playing all three scored +3 —
+ * and since nothing was compared against yesterday, a streak survived skipping
+ * a week. Both were invisible while the number sat in a text line. Now the day
+ * is the unit: Classic, Art and Effect all have to fall before it counts.
+ *
+ * Nothing runs on the days you do not open the page, so a broken run is worked
+ * out on read instead of on write: a streak whose last earned day is older than
+ * yesterday is over. Yesterday still counts as alive, because today is not
+ * finished yet. */
+function solvedToday(){
+  const day = stats().days[S.day] || {};
+  return MODES.filter(m => day[m]);
+}
+
+function currentStreak(){
+  const st = stats();
+  if (st.streakDay === null || st.streakDay === undefined) return 0;
+  return S.day - st.streakDay <= 1 ? st.streak : 0;
+}
+
 function recordResult(won){
-  if (S.play !== "daily") return;
+  if (S.play !== "daily" || !won) return;
   const store = loadStore();
-  const st = store.stats || {played:0, won:0, streak:0, best:0, last:null};
-  const tag = S.day + ":" + S.mode;
-  if (st.last === tag) return;
-  st.last = tag; st.played++;
-  if (won){ st.won++; st.streak++; st.best = Math.max(st.best, st.streak); } else { st.streak = 0; }
+  const st = Object.assign(blankStats(), store.stats);
+  const day = st.days[S.day] || (st.days[S.day] = {});
+  if (day[S.mode]) return;                       // already banked this mode today
+  day[S.mode] = true;
+  st.won++;
+
+  if (MODES.every(m => day[m])){                 // the day is complete
+    const alive = st.streakDay === S.day - 1 ? currentStreakOf(st) : 0;
+    st.streak = alive + 1;
+    st.streakDay = S.day;
+    st.best = Math.max(st.best, st.streak);
+    st.played++;
+  }
+  // keep the ledger from growing without bound
+  Object.keys(st.days).forEach(d => { if (S.day - (+d) > 30) delete st.days[d]; });
+  store.stats = st; saveStore(store);
+}
+const currentStreakOf = st => (S.day - st.streakDay <= 1 ? st.streak : 0);
+
+/* Anyone already playing when the all-three rule landed had their day recorded
+   under the old per-mode counter, which the new ledger knows nothing about.
+   They do not need to be told to start over.
+
+   The round state is the way back: `persist()` has always saved a `{a,g,o,w}`
+   entry per mode per day and keeps a week of them, and `w` is exactly "this
+   mode was solved that day". So the ledger is rebuilt from those, and the
+   streak recounted from the ledger rather than trusting the old number. Runs
+   idempotent, so it is safe on every load. */
+function migrateStats(){
+  const store = loadStore();
+  const st = Object.assign(blankStats(), store.stats);
+  const complete = d => MODES.every(m => (st.days[d] || {})[m]);
+
+  Object.keys(store).forEach(key => {
+    const m = key.match(/^(classic|art|effect):d(-?\d+)$/);
+    if (!m || !store[key] || !store[key].w) return;
+    (st.days[m[2]] || (st.days[m[2]] = {}))[m[1]] = true;
+  });
+
+  let day = complete(S.day) ? S.day : S.day - 1;
+  const anchor = day;
+  let run = 0;
+  while (complete(day)){ run++; day--; }
+  st.streak = run;
+  st.streakDay = run ? anchor : null;
+  st.best = Math.max(st.best || 0, run);
+  delete st.last;                       // the old per-mode marker
+
   store.stats = st; saveStore(store);
 }
 
@@ -850,6 +954,72 @@ let toastTimer;
 function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1900);
+}
+
+/* The streak marker digivolves. A streak is a thing that grows over days, which
+   is the one mechanic this game is named after, so it is drawn as an egg that
+   cracks open and hatches rather than as a flame or a number in a circle.
+   Kept to 18px and one line of small caps — it sits beside the memory gauge and
+   should never compete with it. */
+const STREAK_TIERS = [
+  {at: 1,  name: "Fresh",       tone: "var(--muted)"},
+  {at: 2,  name: "In-Training", tone: "var(--cyan-dim)"},
+  {at: 3,  name: "Rookie",      tone: "var(--cyan)"},
+  {at: 5,  name: "Champion",    tone: "var(--cyan)"},
+  {at: 10, name: "Ultimate",    tone: "var(--amber)"},
+  {at: 20, name: "Mega",        tone: "var(--amber)"}
+];
+const streakTier = n => STREAK_TIERS.filter(t => n >= t.at).pop() || STREAK_TIERS[0];
+
+function eggSVG(level, tone){
+  // level 0-5: the shell picks up a crack, then splits, then opens
+  const shell = "M12 1.5 C18 1.5 21.5 9 21.5 15.5 C21.5 22.5 17.4 28.5 12 28.5 "
+              + "C6.6 28.5 2.5 22.5 2.5 15.5 C2.5 9 6 1.5 12 1.5 Z";
+  const crack = level >= 2
+    ? `<path d="M4 15 L8 13 L6.5 17 L11 15 L9 19.5 L14 17 L12 21 L18.5 18.5"
+             fill="none" stroke="var(--bg)" stroke-width="${level >= 4 ? 2.6 : 1.7}"
+             stroke-linejoin="round"/>` : "";
+  const spark = level >= 5
+    ? `<g fill="var(--bg)"><circle cx="12" cy="9" r="2.1"/></g>` : "";
+  return `<svg viewBox="0 0 24 30" aria-hidden="true">
+    <path d="${shell}" fill="${tone}" opacity="${0.35 + level * 0.13}"/>
+    <path d="${shell}" fill="none" stroke="${tone}" stroke-width="1.8"/>
+    ${crack}${spark}</svg>`;
+}
+
+const MODE_LABEL = {classic:"Classic", art:"Art", effect:"Effect"};
+
+function streakHTML(){
+  if (S.play !== "daily") return "";
+  const n = currentStreak(), best = stats().best;
+  if (!n) return "";
+  const tier = streakTier(n);
+  return `<span class="streak" style="--tone:${tier.tone}"
+      title="${n}-day streak${best > n ? ` · best ${best}` : ""}">
+    ${eggSVG(STREAK_TIERS.indexOf(tier), tier.tone)}
+    <b>${n}</b><span class="tier">${tier.name}</span></span>`;
+}
+
+/* The reminder exists because the rule is not guessable. Solving Classic and
+   walking away looks like a finished day, so the outstanding modes are named
+   rather than merely counted. */
+function reminderHTML(){
+  if (S.play !== "daily") return "";
+  const done = solvedToday();
+  const left = MODES.filter(m => !done.includes(m));
+  if (!left.length){
+    return `<div class="remind done">Day complete — all three modes solved.
+      Come back tomorrow to keep the streak alive.</div>`;
+  }
+  const pips = MODES.map(m =>
+    `<span class="pip ${done.includes(m) ? "on" : ""}">${done.includes(m) ? "✓" : "○"} ${MODE_LABEL[m]}</span>`).join("");
+  return `<div class="remind">
+    <span class="pips">${pips}</span>
+    <span class="msg">${
+      done.length
+        ? `${left.length} to go — the streak only counts a day once all three fall.`
+        : `Solve all three of today's modes to take the day.`
+    }</span></div>`;
 }
 
 const chipsHTML = colors => (colors||[]).map(c =>
@@ -867,9 +1037,9 @@ function renderGauge(){
   const label = S.play === "endless"
     ? `Endless · <b>${n}</b> guess${n===1?"":"es"}`
     : `Memory <b>${Math.min(n,10)}</b> · ${n} guess${n===1?"":"es"}`;
-  const st = stats();
-  const streak = (S.play === "daily" && st.streak) ? ` · streak <b>${st.streak}</b>` : "";
-  $("#count").innerHTML = label + streak;
+  $("#count").innerHTML = label;
+  $("#streak").innerHTML = streakHTML();
+  $("#remind").innerHTML = reminderHTML();
 }
 
 // The name with every letter and digit blanked out except the first. It is the
@@ -1320,6 +1490,7 @@ $("#btn-new").onclick = () => startRound(false);
 ["daily","endless"].forEach(k => $("#p-"+k).onclick = () => setPlay(k));
 
 if (META.builtFrom) $("#built").textContent = " Card data built " + META.builtFrom.slice(0,10) + ".";
+migrateStats();
 startRound(true);
 $("#guess").focus();
 </script>

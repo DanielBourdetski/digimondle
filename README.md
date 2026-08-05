@@ -304,6 +304,32 @@ answers people had already played. `build_schedule()` therefore holds the first
 `days_elapsed() + 1` entries of the previous `schedule.json` fixed and only
 re-rolls from tomorrow on. Today counts as spoken for — its answer is live.
 
+## The streak
+
+A day is earned by solving **all three** daily modes. That rule is not
+guessable, so a bar at the top names the modes still outstanding rather than
+merely counting them, and the marker beside the memory gauge **digivolves** with
+the run: Fresh, In-Training, Rookie, Champion, Ultimate, Mega at twenty days.
+The egg picks up a crack, then splits, then hatches.
+
+The counting had two bugs worth not reintroducing. It used to key off
+`day + ":" + mode`, so playing all three modes scored **+3** — and because
+nothing was ever compared against yesterday, a streak **survived skipping a
+week**. Both were invisible while the number sat in a text line; they are not
+once it has a badge.
+
+Nothing runs on the days a player does not open the page, so a broken run is
+worked out on read rather than on write: a streak whose last earned day is older
+than yesterday is over. Yesterday still counts as alive, because today is not
+finished yet.
+
+`migrateStats()` rebuilds the ledger for anyone who was already playing when the
+rule changed. The round state is the way back — `persist()` has always saved a
+`{a,g,o,w}` entry per mode per day and keeps a week of them, and `w` means
+exactly "this mode was solved that day". The streak is then recounted from that
+ledger instead of trusting the old number. It is idempotent, so it runs on every
+load.
+
 ## Endless
 
 Every mode has a Daily and an Endless side. Endless deals from a shuffled queue

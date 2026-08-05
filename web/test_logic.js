@@ -59,7 +59,9 @@ const exported = script + `
 ;globalThis.__T = {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade,
   setMode, setPlay, startRound, submitGuess, giveUp, nextEndless, dailyAnswer,
   openSuggest, getSug: () => sug, SET_DATES, skeleton, LADDERS, HINTS,
-  endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE: SEARCH.length};`;
+  endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE: SEARCH.length,
+  recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
+  migrateStats, dayIndexNow: dayIndex()};`;
 vm.runInContext(exported, ctx, {filename: "index.html#script"});
 
 // --- assertions -----------------------------------------------------------
@@ -78,7 +80,9 @@ function checkThat(name, cond, detail){
 const {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade, setMode, setPlay,
        startRound, submitGuess, giveUp, nextEndless, dailyAnswer, openSuggest,
        getSug, SET_DATES, skeleton, LADDERS, HINTS,
-       endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE} = ctx.__T;
+       endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE,
+       recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
+       migrateStats, dayIndexNow} = ctx.__T;
 
 console.log("data");
 check("cards loaded", CARDS.length, 4326);
@@ -225,6 +229,73 @@ for (let i = 0; i < 1200; i++){
 }
 checkThat("1200 endless draws with no repeat", dupeAt === -1, `repeat at draw ${dupeAt}`);
 
+
+console.log("\nstreak");
+const clearSave = () => { delete store["dgdle.v1"]; };
+const winDay = (d, modes) => { S.day = d; modes.forEach(m => { S.mode = m; startRound(false); recordResult(true); }); };
+S.play = "daily";
+
+clearSave(); winDay(0, ["classic"]);
+check("one mode does not take the day", currentStreak(), 0);
+check("but it is remembered as solved", solvedToday(), ["classic"]);
+
+clearSave(); winDay(0, ["classic","art"]);
+check("two of three still does not take the day", currentStreak(), 0);
+
+clearSave(); winDay(0, ["classic","art","effect"]);
+check("all three takes the day", currentStreak(), 1);
+
+clearSave(); [0,1,2].forEach(d => winDay(d, ["classic","art","effect"]));
+check("three complete days in a row", currentStreak(), 3);
+
+S.day = 3;
+check("a day still open keeps yesterdays streak alive", currentStreak(), 3);
+S.day = 4;
+check("a day skipped entirely ends it", currentStreak(), 0);
+check("best survives the break", stats().best, 3);
+
+clearSave(); winDay(0, ["classic","art","effect"]); winDay(0, ["classic"]);
+check("replaying a solved mode does not double count", currentStreak(), 1);
+
+clearSave(); S.day = 0; S.mode = "classic"; startRound(false); recordResult(false);
+check("giving up banks nothing", solvedToday(), []);
+
+checkThat("streak tiers ascend",
+  STREAK_TIERS.every((t, i) => !i || t.at > STREAK_TIERS[i-1].at));
+check("tier names by streak length",
+  [1,2,3,5,10,20,99].map(n => streakTier(n).name),
+  ["Fresh","In-Training","Rookie","Champion","Ultimate","Mega","Mega"]);
+
+clearSave(); S.day = dayIndexNow; S.mode = "classic";
+
+// players mid-session when the rule changed keep their day
+clearSave();
+store["dgdle.v1"] = JSON.stringify({
+  stats: {played:1, won:3, streak:3, best:3, last: "0:effect"},
+  "classic:d0": {a:"x", g:["x"], o:true, w:true},
+  "art:d0":     {a:"y", g:["y"], o:true, w:true},
+  "effect:d0":  {a:"z", g:["z"], o:true, w:true}
+});
+S.day = 0; migrateStats();
+check("an old save is rebuilt into the day ledger", solvedToday().sort(), ["art","classic","effect"]);
+check("and the day it already earned still counts", currentStreak(), 1);
+checkThat("the stale per-mode marker is dropped", stats().last === undefined);
+
+migrateStats(); migrateStats();
+check("migrating twice changes nothing", currentStreak(), 1);
+
+// a half-finished day migrates as half-finished
+clearSave();
+store["dgdle.v1"] = JSON.stringify({
+  stats: {played:1, won:1, streak:1, best:1, last: "0:classic"},
+  "classic:d0": {a:"x", g:["x"], o:true, w:true},
+  "art:d0":     {a:"y", g:["y"], o:true, w:false}
+});
+S.day = 0; migrateStats();
+check("a mode given up does not migrate as solved", solvedToday(), ["classic"]);
+check("and an incomplete day earns no streak", currentStreak(), 0);
+
+clearSave(); S.day = dayIndexNow; S.mode = "classic";
 console.log("\nstate");
 S.mode = "classic"; S.play = "daily"; startRound(false);
 const answer = S.answer.id;
