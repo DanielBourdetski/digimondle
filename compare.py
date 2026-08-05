@@ -76,6 +76,26 @@ def _set(guess, answer):
     return ABSENT
 
 
+# Rarity is ordered so it can point, not just match. The tail is a judgement
+# call rather than a pull-rate fact: promos are not "rarer" than a Secret Rare,
+# they come from a different channel entirely — but a total order is what an
+# arrow needs, and promos sitting on top is the reading that matches how players
+# talk about them. UR is 4 cards, all from BT-25 and EX-12.
+RARITY_ORDER = {"C": 1, "U": 2, "R": 3, "SR": 4, "SEC": 5, "UR": 6, "P": 7}
+
+
+def _rarity(guess, answer):
+    """Exact match, otherwise point up or down the ladder."""
+    if guess is None and answer is None:
+        return CORRECT
+    if guess == answer:
+        return CORRECT
+    g, a = RARITY_ORDER.get(guess), RARITY_ORDER.get(answer)
+    if g is None or a is None:
+        return ABSENT
+    return HIGHER if a > g else LOWER
+
+
 def _load_set_dates():
     """{'BT1': '2021-01', ...} — English release month per set.
 
@@ -116,7 +136,7 @@ _RULES = {
     "dp": _numeric,
     "attribute": _scalar,
     "types": _set,
-    "rarity": _scalar,
+    "rarity": _rarity,
     "setCode": _set_code,
 }
 
@@ -151,6 +171,11 @@ if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     with io.open(os.path.join(here, "data", "build", "cards.json"), encoding="utf-8") as fh:
         cards = [c for c in json.load(fh) if c["inPool"]]
+    # build_game_data.py ships LM as a promo rarity; match that here or the
+    # reference and the browser disagree on every LM card
+    for c in cards:
+        if c["setCode"] == "LM":
+            c["rarity"] = "P"
     by_id = {c["id"]: c for c in cards}
 
     def show(guess_id, answer_id):

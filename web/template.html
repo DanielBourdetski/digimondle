@@ -172,6 +172,16 @@ h1 .dle{color:var(--amber)}
 .hint .lab{font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; font-weight:700; color:var(--cyan)}
 .hint .val{font-weight:600}
 .hint .locked-val{font-style:italic; opacity:.7}
+/* the blanked-out name. underline-per-slot rather than literal underscores, so
+   the gaps line up and a 129-character card name still wraps instead of
+   shoving the row off the page */
+.hint .skel{
+  font-family:var(--mono); font-size:15px; font-weight:700; letter-spacing:.12em;
+  white-space:pre-wrap; word-break:break-word; max-width:52ch; display:inline-block;
+  background:repeating-linear-gradient(90deg,var(--cyan) 0 .62em,transparent .62em .74em)
+             bottom left / 100% 1.5px no-repeat;
+  padding-bottom:3px;
+}
 .claim{
   font-family:var(--body); font-weight:600; font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
   padding:6px 11px; cursor:pointer; border:1px solid var(--cyan); background:transparent; color:var(--cyan);
@@ -241,6 +251,23 @@ h1 .dle{color:var(--amber)}
   opacity:.5;
 }
 .artnote{text-align:center; font-size:12px; color:var(--muted); margin:-8px 0 20px; font-family:var(--mono)}
+
+/* ---------- clue ladder (art + effect modes) ----------
+   These two modes give no feedback on a guess, so the ladder opens itself as
+   you miss rather than waiting to be claimed. */
+.clues{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:8px; margin:14px 0 6px}
+.clue{
+  border:1.5px solid var(--rule); background:var(--panel); padding:9px 12px;
+  display:flex; flex-direction:column; gap:3px; min-height:60px; justify-content:center;
+}
+.clue .lab{font-size:9px; letter-spacing:.17em; text-transform:uppercase; font-weight:700; color:var(--cyan)}
+.clue .val{font-size:14px; font-weight:600}
+.clue.locked{border-style:dashed; opacity:.45}
+.clue.locked .lab{color:var(--muted)}
+.clue.locked .val{font-family:var(--mono); font-size:12px; font-weight:400; font-style:italic}
+.clue.art{align-items:flex-start}
+.clue.art .peek{width:100%; height:70px; margin-top:2px}
+.laddernote{font-family:var(--mono); font-size:11.5px; color:var(--muted); margin:0 0 16px}
 
 /* ---------- wrong guesses (art + effect modes) ---------- */
 .wrongs{display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 8px}
@@ -450,7 +477,7 @@ const COLS = [
   {k:"dp",        lab:"DP",        kind:"num"},
   {k:"attribute", lab:"Attribute", kind:"scalar"},
   {k:"types",     lab:"Type",      kind:"set"},
-  {k:"rarity",    lab:"Rarity",    kind:"scalar"},
+  {k:"rarity",    lab:"Rarity",    kind:"rarity"},
   {k:"setCode",   lab:"Set",       kind:"setcode"}
 ];
 
@@ -502,6 +529,19 @@ function gradeNum(g, a){
   if (g === a) return {cls:"hit"};
   return {cls:"miss", arrow: a > g ? "↑" : "↓"};
 }
+// Rarity is ordered so it can point, not just match. The tail is a judgement
+// call rather than a pull-rate fact: promos are not "rarer" than a Secret Rare,
+// they come from a different channel entirely — but a total order is what an
+// arrow needs, and promos on top is the reading that matches how players talk.
+// The whole LM line is treated as promo, so its cards ship with rarity "P".
+const RARITY_ORDER = {C:1, U:2, R:3, SR:4, SEC:5, UR:6, P:7};
+function gradeRarity(g, a){
+  if (empty(g) && empty(a)) return {cls:"hit", na:true};
+  if (g === a) return {cls:"hit"};
+  const rg = RARITY_ORDER[g], ra = RARITY_ORDER[a];
+  if (!rg || !ra) return {cls:"miss"};
+  return {cls:"miss", arrow: ra > rg ? "↑" : "↓"};
+}
 function gradeSet(g, a){
   g = g||[]; a = a||[];
   if (!g.length && !a.length) return {cls:"hit", na:true};
@@ -519,7 +559,8 @@ function gradeSetCode(g, a){
   if (!dg || !da) return {cls:"miss"};
   return {cls:"miss", arrow: da > dg ? "↑" : "↓"};
 }
-const GRADERS = {scalar:gradeScalar, num:gradeNum, set:gradeSet, setcode:gradeSetCode};
+const GRADERS = {scalar:gradeScalar, num:gradeNum, set:gradeSet,
+                 rarity:gradeRarity, setcode:gradeSetCode};
 
 function grade(guess, answer, col){ return GRADERS[col.kind](guess[col.k], answer[col.k]); }
 
@@ -628,17 +669,81 @@ function renderGauge(){
   $("#count").innerHTML = label + streak;
 }
 
+// The name with every letter and digit blanked out except the first. It is the
+// one hint that works on all four card types — keywords only exist on half the
+// pool and digivolve requirements only on Digimon — and it is deliberately
+// strong, since the art now arrives early. Across the pool it makes 909
+// buckets with a median size of one card; the worst case is generic short
+// names like G_______, where 132 cards still share a skeleton.
+//
+// Spaces, colons and hyphens are left as they are, because they are half the
+// tell: "SkullKnightmon: Mighty Axe Mode" comes back as
+// "S_____________: ______ ___ ____", which says "a Mode card" before a single
+// letter has been worked out.
+function skeleton(name){
+  return [...name].map((ch, i) =>
+    i === 0 || !/[\p{L}\p{N}]/u.test(ch) ? ch : "_").join("");
+}
+
+const colorVal = a => `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`;
+const numVal   = v => empty(v) ? "—" : v;
+
+// Classic offers two hints and makes you press for them: it already feeds back
+// through the grid, so a purist can finish having seen neither.
+//
+// Art and Effect give no feedback at all — you guess, you are told nothing, you
+// guess again. So they get a ladder instead, and it opens on its own as you
+// miss. Nothing to claim, nothing to decide: fail enough and the card slowly
+// tells you what it is.
 const HINTS = {
-  classic:[{at:5, lab:"Illustrator", get:a => a.illustrator || "uncredited"},
-           {at:9, lab:"Art", art:true}],
-  art:    [{at:4, lab:"Card type", get:a => a.cardType},
-           {at:8, lab:"Color", get:a => `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`}],
-  effect: [{at:5, lab:"Color", get:a => `<span class="chips">${chipsHTML(a.colors)}</span> ${esc(a.colors.join(" / "))}`},
-           {at:9, lab:"Art", art:true}]
+  classic: [{at:4, lab:"Art", art:true},
+            {at:8, lab:"Name", skel:true}]
 };
+
+const LADDERS = {
+  art: [
+    {at:2,  lab:"Card type", get:a => a.cardType},
+    {at:4,  lab:"Color",     get:colorVal},
+    {at:6,  lab:"Level",     get:a => empty(a.level) ? "—" : "Lv." + a.level},
+    {at:8,  lab:"Cost · DP", get:a => `${numVal(a.playCost)} · ${numVal(a.dp)}`},
+    {at:10, lab:"Attribute", get:a => a.attribute || "—"},
+    {at:13, lab:"Name",      skel:true}
+  ],
+  effect: [
+    {at:2,  lab:"Card type", get:a => a.cardType},
+    {at:4,  lab:"Color",     get:colorVal},
+    {at:6,  lab:"Level",     get:a => empty(a.level) ? "—" : "Lv." + a.level},
+    {at:8,  lab:"Cost · DP", get:a => `${numVal(a.playCost)} · ${numVal(a.dp)}`},
+    {at:10, lab:"Art",       art:true},
+    {at:13, lab:"Name",      skel:true}
+  ]
+};
+
+function ladderHTML(){
+  const list = LADDERS[S.mode];
+  if (!list) return "";
+  const n = S.guesses.length, a = S.answer;
+  const cells = list.map(step => {
+    const open = n >= step.at || S.over;
+    if (!open) return `<div class="clue locked"><span class="lab">${step.lab}</span>
+        <span class="val">${step.at - n} more</span></div>`;
+    if (step.art){
+      return `<div class="clue art"><span class="lab">${step.lab}</span>
+          <div class="peek" style="--z:2.6">${IMGTAG(a.id,"","")}</div></div>`;
+    }
+    const val = step.skel ? `<span class="skel">${esc(skeleton(a.name))}</span>` : step.get(a);
+    return `<div class="clue"><span class="lab">${step.lab}</span><span class="val">${val}</span></div>`;
+  }).join("");
+  const next = list.find(step => n < step.at);
+  const note = next
+    ? `<p class="laddernote">next clue after ${next.at - n} more guess${next.at - n === 1 ? "" : "es"}</p>`
+    : "";
+  return `<div class="clues">${cells}</div>${note}`;
+}
 
 function hintHTML(){
   const list = HINTS[S.mode], n = S.guesses.length, a = S.answer;
+  if (!list) return ladderHTML();
   return `<div class="hints">` + list.map((h, i) => {
     const slot = i === 0 ? "one" : "two";
     const open = S.hints[slot] || S.over;
@@ -655,8 +760,11 @@ function hintHTML(){
                          : `<span class="locked-val">after ${h.at} guesses</span>`}
         </div></div>`;
     }
+    const value = open
+      ? (h.skel ? `<span class="skel">${esc(skeleton(a.name))}</span>` : h.get(a))
+      : null;
     return `<div class="hint ${open?"open":""}"><span class="lab">${h.lab}</span>
-      ${open ? `<span class="val">${h.get(a)}</span>`
+      ${open ? `<span class="val">${value}</span>`
              : ready ? `<button class="claim" data-hint="${slot}">Reveal</button>`
                      : `<span class="locked-val">after ${h.at} guesses</span>`}</div>`;
   }).join("") + `</div>`;

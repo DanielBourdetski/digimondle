@@ -203,6 +203,13 @@ the strongest single move in the game.
 Partial credit is only for `colors` and `types`, on any overlap. Everything else
 is right or wrong.
 
+Rarity points too, on `C < U < R < SR < SEC < UR < P`. The tail is a judgement
+call rather than a pull-rate fact — promos are not "rarer" than a Secret Rare,
+they come from a different channel — but an arrow needs a total order, and
+promos on top is how players talk about them. The whole **LM** line is treated as
+a promo channel, so its cards ship with rarity `P` regardless of what their pack
+happened to print.
+
 Verified over 20k random pairings: 17.7% correct, 1.6% partial, 51.2% absent,
 29.4% directional — and every card compares as all-correct against itself.
 
@@ -272,6 +279,30 @@ the raw pool ratios.
 Rerolling: change `SCHEDULE_SEED` in `build_game_data.py`. Same seed always
 gives the same year, so a rebuild after a new set drops does not shuffle days
 that have already been played.
+
+## What is in the pool
+
+`restrictions.english == "Not released"` from the source data goes stale badly:
+it still had all 74 EX-11 cards and 75 of EX-12 flagged unreleased months after
+both sets were on shelves, quietly keeping 157 real cards out of the game.
+
+So membership is decided by **belonging to a set with an English release date**,
+and that date is deliberately *not* compared against today — a spoiled BT-26
+card is a card people have seen and can name. The stale flag only gets a say for
+`P` and `LM`, which are not single sets, have no date, and are where the
+genuinely Japan-only cards live.
+
+Pool: 4327 of 4399. The 72 left out are 31 LM and 28 P that never released in
+English, plus 13 BT-26 rows whose name in the source is the literal string
+`[[:Category:|]]` — wiki markup that leaked into the data.
+
+### Adding cards reshuffles the year, so days already played are frozen
+
+The schedule draws without replacement from the pool, so inserting a card
+changes every draw after it. A rebuild after a new set would silently rewrite
+answers people had already played. `build_schedule()` therefore holds the first
+`days_elapsed() + 1` entries of the previous `schedule.json` fixed and only
+re-rolls from tomorrow on. Today counts as spoken for — its answer is live.
 
 ## Endless
 

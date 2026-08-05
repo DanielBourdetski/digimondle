@@ -58,10 +58,11 @@ vm.createContext(ctx);
 const exported = script + `
 ;globalThis.__T = {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade,
   setMode, setPlay, startRound, submitGuess, giveUp, nextEndless, dailyAnswer,
-  openSuggest, getSug: () => sug, SET_DATES};`;
+  openSuggest, getSug: () => sug, SET_DATES, skeleton, LADDERS, HINTS};`;
 vm.runInContext(exported, ctx, {filename: "index.html#script"});
 
 // --- assertions -----------------------------------------------------------
+const UP = "↑", DOWN = "↓";
 let failures = 0;
 function check(name, got, want){
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -75,14 +76,17 @@ function checkThat(name, cond, detail){
 
 const {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade, setMode, setPlay,
        startRound, submitGuess, giveUp, nextEndless, dailyAnswer, openSuggest,
-       getSug, SET_DATES} = ctx.__T;
+       getSug, SET_DATES, skeleton, LADDERS, HINTS} = ctx.__T;
 
 console.log("data");
-check("cards loaded", CARDS.length, 4089);
-check("effect pool", POOL.effect.length, 3902);
+check("cards loaded", CARDS.length, 4327);
+check("effect pool", POOL.effect.length, 4138);
 check("schedule modes", Object.keys(SCHEDULE.modes).sort(), ["art","classic","effect"]);
 checkThat("every scheduled id resolves",
   Object.values(SCHEDULE.modes).every(l => l.every(id => BY_ID[id])));
+checkThat("announced sets are in the pool (spoiled cards still count)",
+  CARDS.some(c => c.setCode === "EX11") && CARDS.some(c => c.setCode === "EX12") &&
+  CARDS.some(c => c.setCode === "BT26"));
 checkThat("effect schedule always has text",
   SCHEDULE.modes.effect.every(id => EFFECTS[id]));
 
@@ -115,6 +119,39 @@ check("arrows point at the answer",
   [grade(BY_ID["ST1-03"], BY_ID["BT10-061"], COLS.find(c=>c.k==="dp")).arrow,
    grade(BY_ID["BT10-061"], BY_ID["ST1-03"], COLS.find(c=>c.k==="dp")).arrow],
   ["↑","↓"]);
+
+console.log("\nhints and ladders");
+// the rarity ladder points, and the whole LM line counts as promo
+const rarCol = COLS.find(c => c.k === "rarity");
+const byRarity = r => CARDS.find(c => c.rarity === r);
+check("common -> secret points up",
+  grade(byRarity("C"), byRarity("SEC"), rarCol).arrow, UP);
+check("promo -> common points down",
+  grade(byRarity("P"), byRarity("C"), rarCol).arrow, DOWN);
+check("secret -> promo still points up",
+  grade(byRarity("SEC"), byRarity("P"), rarCol).arrow, UP);
+checkThat("every LM card ships as a promo rarity",
+  CARDS.filter(c => c.setCode === "LM").every(c => c.rarity === "P"));
+
+// the name skeleton keeps punctuation and the first letter, nothing else
+check("skeleton blanks letters but keeps structure",
+  skeleton("SkullKnightmon: Mighty Axe Mode"),
+  "S_____________: ______ ___ ____");
+checkThat("skeleton never changes a name's length",
+  CARDS.every(c => skeleton(c.name).length === c.name.length));
+checkThat("skeleton leaks nothing past the first character",
+  CARDS.every(c => ![...skeleton(c.name)].slice(1).some((ch, i) =>
+    /[\p{L}\p{N}]/u.test(ch) && ch === c.name[i + 1])));
+
+// art and effect open a ladder on misses; classic offers claimable hints
+checkThat("only art and effect have a ladder",
+  !!LADDERS.art && !!LADDERS.effect && !LADDERS.classic);
+checkThat("only classic has claimable hints",
+  !!HINTS.classic && !HINTS.art && !HINTS.effect);
+checkThat("every ladder step is reachable within 13 misses",
+  Object.values(LADDERS).every(l => l.every(step => step.at <= 13)));
+checkThat("ladder steps are in ascending order",
+  Object.values(LADDERS).every(l => l.every((step, i) => !i || step.at > l[i-1].at)));
 
 console.log("\nsearch");
 const q = s => { openSuggest(s); return getSug().map(id => BY_ID[id].name + " [" + id + "]"); };

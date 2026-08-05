@@ -6,6 +6,7 @@ list). digimoncard.io fills in release date, set membership and tcgplayer ids.
 Output: data/build/cards.json  +  data/build/stats.json
 """
 
+import datetime
 import io as _io
 import json
 import os
@@ -18,6 +19,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, "data", "raw")
 BUILD = os.path.join(HERE, "data", "build")
+
+# Whether a set is out is a question about *now*, so this build is not
+# reproducible across months by design — which is the point.
+THIS_MONTH = datetime.date.today().strftime("%Y-%m")
 
 # Values that mean "this field does not apply to this card"
 EMPTY = {"-", "", "NO DATA", None, "Unknown"}
@@ -55,11 +60,22 @@ def as_int(value):
 
 
 def split_list(value, sep="/"):
-    """'Enhancement/Twilight' -> ['Enhancement', 'Twilight']"""
+    """'Enhancement/Twilight' -> ['Enhancement', 'Twilight']
+
+    Deduplicated, because the source is not: BT10-041 has a colour of
+    'Yellow/Yellow'. That is not only an ugly "Yellow / Yellow" on screen — the
+    set comparison matches on length first, so a plain mono-yellow card scored
+    a partial against it instead of an exact match.
+    """
     value = clean(value)
     if not value:
         return []
-    return [p.strip() for p in value.split(sep) if p.strip() and p.strip() not in EMPTY]
+    out = []
+    for part in value.split(sep):
+        part = part.strip()
+        if part and part not in EMPTY and part not in out:
+            out.append(part)
+    return out
 
 
 def norm_key(card_number):
@@ -86,6 +102,13 @@ def set_code(card_number):
 # --------------------------------------------------------------------------
 tk = load(os.path.join(RAW, "takaotaku_cards.json"))
 io_rows = load(os.path.join(RAW, "digimoncard_io.json"))
+
+# written by fetch_set_dates.py; absent just means every card falls back to the
+# (unreliable) release flag, which is worth saying out loud
+set_dates_path = os.path.join(BUILD, "set_dates.json")
+SET_DATES = load(set_dates_path) if os.path.exists(set_dates_path) else {}
+if not SET_DATES:
+    print("  !! no set_dates.json — run fetch_set_dates.py, release status will be stale")
 
 # digimoncard.io has one row per printing; collapse to one record per card
 io_by_key = defaultdict(list)
@@ -120,6 +143,20 @@ for src in tk:
 
     restrictions = src.get("restrictions") or {}
     status_en = clean(restrictions.get("english")) or "Unrestricted"
+    code = set_code(number)
+
+    # `restrictions.english == "Not released"` goes stale badly: TakaOtaku still
+    # had all 74 EX-11 cards and 75 of EX-12 flagged unreleased months after both
+    # sets were on shelves, which quietly kept 157 real cards out of the pool.
+    #
+    # So belonging to a set with an English release date is what counts, and the
+    # date itself is not compared against today — a spoiled BT-26 card is a card
+    # people have seen and can name. The flag only decides for P and LM, which
+    # are not single sets, have no date, and are where the genuinely Japan-only
+    # cards live.
+    set_month = SET_DATES.get(code)
+    released = bool(set_month) or status_en != "Not released"
+    announced = bool(set_month) and set_month > THIS_MONTH
 
     card = {
         "id": number,
@@ -140,7 +177,7 @@ for src in tk:
         "illustrator": clean(src.get("illustrator")) or clean(primary.get("artist")),
 
         # --- set / release info ---
-        "setCode": set_code(number),
+        "setCode": code,
         "setPrefix": set_prefix(number),
         "setCategory": SET_PREFIX_NAMES.get(set_prefix(number), "Other"),
         "blocks": [b for b in (src.get("block") or []) if b],
@@ -161,7 +198,9 @@ for src in tk:
 
         # --- status ---
         "restriction": status_en,
-        "released": status_en != "Not released",
+        "released": released,
+        "announced": announced,   # dated set that has not shipped yet
+        "setReleased": set_month,
         "altArtCount": len(src.get("AAs") or []),
 
         # --- images (loaded at runtime, never mirrored) ---
@@ -220,6 +259,7 @@ stats = {
     "inPool": len(pool),
     "digimonInPool": len(digimon),
     "notReleased": sum(1 for c in cards if not c["released"]),
+    "announcedNotShipped": sum(1 for c in cards if c.get("announced")),
     "missingImagePrimary": sum(1 for c in cards if not c["image"]["primary"]),
     "distributions": {
         "cardType": dist(pool, lambda c: c["cardType"]),

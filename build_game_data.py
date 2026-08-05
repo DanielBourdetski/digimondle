@@ -81,7 +81,10 @@ def slim(card, io_hosts=()):
         "a": card["attribute"],
         "ty": card["types"],
         "s": card["setCode"],
-        "r": card["rarity"],
+        # LM cards carry whatever rarity their pack happened to print (C/U/R/SR/
+        # SEC/P), but the whole LM line is a promo channel, so the game treats
+        # them as promos and the rarity ladder puts them with P.
+        "r": "P" if card["setCode"] == "LM" else card["rarity"],
         "i": card["illustrator"],
         # ACE is printed on the card but never appears in its name, and players
         # do say "MetalGreymon ACE" — so it ships as an extra search term.
@@ -164,7 +167,29 @@ def notability(card):
 # ---------------------------------------------------------------------------
 # schedule
 # ---------------------------------------------------------------------------
-def build_schedule(pool, days, seed, label):
+def previous_schedule():
+    """The schedule from the last build, if there is one."""
+    path = os.path.join(GAME, "schedule.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with _io.open(path, encoding="utf-8") as fh:
+            old = json.load(fh)
+    except Exception:
+        return None
+    return old if old.get("startDate") == START_DATE.isoformat() else None
+
+
+def days_elapsed():
+    """How many schedule days are already spoken for.
+
+    Today counts: its answer is live and someone may already have played it, so
+    the range that gets frozen is inclusive of the current day.
+    """
+    return max(0, (date.today() - START_DATE).days + 1)
+
+
+def build_schedule(pool, days, seed, label, keep=()):
     """Weighted pick per day.
 
     Hard rule: a card is never used twice in the same schedule — picks are drawn
@@ -173,15 +198,27 @@ def build_schedule(pool, days, seed, label):
     and every relaxation is counted so it shows up in the build output.
     """
     rng = random.Random(seed)
-    remaining = list(pool)
+
+    # Days that have already happened are frozen. Adding cards to the pool
+    # changes every draw that follows, so without this a rebuild after a new set
+    # would silently rewrite answers people have already played — and the
+    # October fix that added 238 cards would have reshuffled the whole year.
+    by_id = {c["id"]: c for c in pool}
+    frozen = [cid for cid in keep if cid in by_id][:days]
+    used = set(frozen)
+
+    remaining = [c for c in pool if c["id"] not in used]
     weights = [notability(c) for c in remaining]
 
-    picked = []
+    picked = list(frozen)
     last_name = {}
     last_set = {}
     relaxed = 0
+    for day, cid in enumerate(frozen):
+        last_name[by_id[cid]["name"]] = day
+        last_set[by_id[cid]["setCode"]] = day
 
-    for day in range(days):
+    for day in range(len(frozen), days):
         choice = choice_idx = None
         for attempt in range(600):
             idx = rng.choices(range(len(remaining)), weights=weights, k=1)[0]
@@ -211,7 +248,8 @@ def build_schedule(pool, days, seed, label):
         picked.append(choice["id"])
 
     note = f", {relaxed} slots needed relaxed spacing" if relaxed else ""
-    print(f"  {label:8} {len(picked)} days, {len(set(picked))} distinct cards{note}")
+    held = f", {len(frozen)} already-played days kept" if frozen else ""
+    print(f"  {label:8} {len(picked)} days, {len(set(picked))} distinct cards{note}{held}")
     return picked
 
 
@@ -252,13 +290,20 @@ def main():
     art_pool = pool
     effect_pool = [c for c in pool if c["id"] in effects]
 
+    old = previous_schedule()
+    played = days_elapsed()
+    keep = {mode: (old["modes"].get(mode, [])[:played] if old else [])
+            for mode in ("classic", "art", "effect")}
+    if played:
+        print(f"  ({played} day(s) already played — those answers are held fixed)")
+
     schedule = {
         "startDate": START_DATE.isoformat(),
         "days": DAYS,
         "modes": {
-            "classic": build_schedule(classic_pool, DAYS, SCHEDULE_SEED, "classic"),
-            "art": build_schedule(art_pool, DAYS, SCHEDULE_SEED + 1, "art"),
-            "effect": build_schedule(effect_pool, DAYS, SCHEDULE_SEED + 2, "effect"),
+            "classic": build_schedule(classic_pool, DAYS, SCHEDULE_SEED, "classic", keep["classic"]),
+            "art": build_schedule(art_pool, DAYS, SCHEDULE_SEED + 1, "art", keep["art"]),
+            "effect": build_schedule(effect_pool, DAYS, SCHEDULE_SEED + 2, "effect", keep["effect"]),
         },
     }
     path = os.path.join(GAME, "schedule.json")
