@@ -47,6 +47,7 @@ const ctx = {
     removeItem: k => { delete store[k]; }
   },
   navigator: {},
+  btoa, atob,                       // the streak code is base64
   setTimeout, clearTimeout, console,
   Date, Math, JSON, Object, Array, String, Number, RegExp, Set, Map, Error
 };
@@ -61,7 +62,9 @@ const exported = script + `
   openSuggest, getSug: () => sug, SET_DATES, skeleton, LADDERS, HINTS,
   endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE: SEARCH.length,
   recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
-  migrateStats, dayIndexNow: dayIndex()};`;
+  migrateStats, exportCode, importCode, b64url, checksum,
+  exportCodeWith: p => { const b = b64url(JSON.stringify(p)); return "DGDLE1-" + b + "-" + checksum(b); },
+  dayIndexNow: dayIndex()};`;
 vm.runInContext(exported, ctx, {filename: "index.html#script"});
 
 // --- assertions -----------------------------------------------------------
@@ -82,7 +85,8 @@ const {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade, setMode, setPlay,
        getSug, SET_DATES, skeleton, LADDERS, HINTS,
        endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE,
        recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
-       migrateStats, dayIndexNow} = ctx.__T;
+       migrateStats, exportCode, importCode, exportCodeWith,
+       dayIndexNow} = ctx.__T;
 
 console.log("data");
 check("cards loaded", CARDS.length, 4326);
@@ -294,6 +298,49 @@ store["dgdle.v1"] = JSON.stringify({
 S.day = 0; migrateStats();
 check("a mode given up does not migrate as solved", solvedToday(), ["classic"]);
 check("and an incomplete day earns no streak", currentStreak(), 0);
+
+clearSave(); S.day = dayIndexNow; S.mode = "classic";
+
+console.log("\nstreak backup");
+clearSave();
+[0,1,2].forEach(d => winDay(d, ["classic","art","effect"]));
+S.day = 2;
+const code = exportCode();
+check("a run of three exports as a run of three", currentStreak(), 3);
+checkThat("the code is prefixed and checksummed", /^DGDLE1-[A-Za-z0-9_-]+-[a-z0-9]{4}$/.test(code), code);
+checkThat("the code stays short enough to paste", code.length < 300, code.length + " chars");
+
+// a fresh browser gets the run back
+clearSave();
+check("a cleared browser starts at nothing", currentStreak(), 0);
+const restored = importCode(code);
+checkThat("restoring reports success", restored.ok, JSON.stringify(restored));
+check("and the run comes back", currentStreak(), 3);
+check("solved days come back too", solvedToday().sort(), ["art","classic","effect"]);
+
+// restoring must not throw away progress already on this device
+clearSave(); winDay(5, ["classic","art","effect"]); S.day = 5;
+importCode(code);
+checkThat("an import merges rather than overwrites",
+  solvedToday().length === 3 && stats().days[0] && stats().days[0].classic);
+
+// a code cannot claim a streak its days do not support
+clearSave();
+const forged = exportCodeWith({v:1, b:99, p:99, w:99, D:[]});
+importCode(forged);
+check("an empty ledger cannot import a streak", currentStreak(), 0);
+check("but a claimed best is still honoured", stats().best, 99);
+
+// damaged codes are refused rather than half-applied
+clearSave();
+const flip = code.slice(0, 12) + (code[12] === "A" ? "B" : "A") + code.slice(13);
+checkThat("a mistyped code is rejected", !importCode(flip).ok);
+checkThat("nonsense is rejected", !importCode("hello there").ok);
+checkThat("an empty string is rejected", !importCode("").ok);
+check("and nothing was written by any of them", currentStreak(), 0);
+
+checkThat("a code survives a round trip through whitespace and case",
+  importCode("  " + code + " ").ok);
 
 clearSave(); S.day = dayIndexNow; S.mode = "classic";
 console.log("\nstate");

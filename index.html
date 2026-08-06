@@ -373,6 +373,18 @@ h1 .dle{color:var(--amber)}
 .fact .val{font-size:13.5px; font-weight:600}
 .actions{display:flex; gap:10px; flex-wrap:wrap}
 
+/* ---------- streak backup ---------- */
+.saverow{display:flex; gap:8px; margin:10px 0; max-width:620px}
+.saverow input{
+  flex:1 1 auto; min-width:0; font-family:var(--mono); font-size:12.5px; padding:9px 11px;
+  border:1.5px solid var(--rule); background:var(--sunk); color:var(--ink);
+}
+.saverow input:focus{outline:none; border-color:var(--cyan)}
+.saverow input::placeholder{color:var(--muted)}
+.savenote{font-size:12.5px; color:var(--muted); max-width:70ch; margin:10px 0 0}
+.savenote.good{color:var(--hit)}
+.savenote.bad{color:var(--amber)}
+
 /* ---------- misc ---------- */
 details.how{margin-top:38px; border-top:1.5px solid var(--rule); padding-top:16px}
 details.how summary{cursor:pointer; font-family:var(--display); font-size:19px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; list-style:none}
@@ -494,6 +506,22 @@ footer a{color:var(--cyan)}
 
       <h4>Daily and Endless</h4>
       <p><b>Daily</b> is the same card for everyone, from a fixed year-long schedule; it never repeats a card inside a year and keeps the same Digimon name at least two months apart. Your progress is saved, so you can close the tab. <b>Endless</b> deals a fresh card whenever you want one and works through the whole pool before it repeats anything — nothing is saved and nothing counts toward your streak.</p>
+    </div>
+  </details>
+
+  <details class="how">
+    <summary>Move your streak</summary>
+    <div class="body">
+      <p>Everything is kept in this browser, so a new device or a cleared cache starts you at nothing. Copy the code below and paste it in on the other machine.</p>
+      <div class="saverow">
+        <input id="save-code" readonly aria-label="Your streak code">
+        <button class="ghost" id="btn-export">Copy</button>
+      </div>
+      <div class="saverow">
+        <input id="load-code" placeholder="Paste a code here…" aria-label="Streak code to restore" autocomplete="off">
+        <button class="ghost" id="btn-import">Restore</button>
+      </div>
+      <p class="savenote" id="save-note">The code carries which days you finished, not the number itself — the streak is recounted from those days when it lands, and restoring merges with whatever this browser already has rather than overwriting it.</p>
     </div>
   </details>
 
@@ -936,6 +964,16 @@ function migrateStats(){
     (st.days[m[2]] || (st.days[m[2]] = {}))[m[1]] = true;
   });
 
+  recountStreak(st);
+  delete st.last;                       // the old per-mode marker
+  store.stats = st; saveStore(store);
+}
+
+/* Recount the run straight from the day ledger. Both the migration and the
+   import restore go through here rather than trusting a number they were
+   handed, so a ledger and its streak can never disagree. */
+function recountStreak(st){
+  const complete = d => MODES.every(m => (st.days[d] || {})[m]);
   let day = complete(S.day) ? S.day : S.day - 1;
   const anchor = day;
   let run = 0;
@@ -943,9 +981,72 @@ function migrateStats(){
   st.streak = run;
   st.streakDay = run ? anchor : null;
   st.best = Math.max(st.best || 0, run);
-  delete st.last;                       // the old per-mode marker
+  return st;
+}
 
+/* ============================ STREAK BACKUP ============================
+   The whole game lives in localStorage, so a new browser, a cleared cache or a
+   second machine loses the run. The code carries the day ledger rather than the
+   streak number, and the streak is recounted from it on the way in — a code
+   cannot claim a run its days do not support.
+
+   Days are absolute indices from the schedule's start date, so a code means the
+   same thing on any device in any timezone. The trailing checksum is there so a
+   mistyped code is rejected outright instead of importing quietly broken data.
+   ====================================================================== */
+const SAVE_PREFIX = "DGDLE1";
+const MODE_BIT = {classic:1, art:2, effect:4};
+
+const b64url = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64url = str => atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+function checksum(str){
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h.toString(36).slice(-4).padStart(4, "0");
+}
+
+function exportCode(){
+  const st = stats();
+  const days = Object.keys(st.days).map(d => {
+    const mask = MODES.reduce((m, mode) => m | (st.days[d][mode] ? MODE_BIT[mode] : 0), 0);
+    return mask ? [+d, mask] : null;
+  }).filter(Boolean).sort((a, b) => a[0] - b[0]);
+  const body = b64url(JSON.stringify({v:1, b:st.best|0, p:st.played|0, w:st.won|0, D:days}));
+  return `${SAVE_PREFIX}-${body}-${checksum(body)}`;
+}
+
+function importCode(raw){
+  const code = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
+  const parts = code.split("-");
+  if (parts.length !== 3 || parts[0] !== SAVE_PREFIX) return {ok:false, why:"That does not look like a Digimondle code."};
+  // base64url is case-sensitive, so re-read the body from the original text
+  const original = String(raw).trim().replace(/\s+/g, "").split("-");
+  const body = original[1] || "";
+  if (checksum(body) !== parts[2].toLowerCase()) return {ok:false, why:"That code is damaged — check for a missing or altered character."};
+
+  let payload;
+  try { payload = JSON.parse(unb64url(body)); } catch(e){ return {ok:false, why:"That code could not be read."}; }
+  if (!payload || payload.v !== 1 || !Array.isArray(payload.D)) return {ok:false, why:"That code is from a version this page does not understand."};
+
+  const store = loadStore();
+  const st = Object.assign(blankStats(), store.stats);
+  // merge rather than replace: restoring on a device where you have already
+  // played today must not throw today away
+  let added = 0;
+  payload.D.forEach(([day, mask]) => {
+    if (!Number.isInteger(day) || !Number.isInteger(mask)) return;
+    const bucket = st.days[day] || (st.days[day] = {});
+    MODES.forEach(m => {
+      if ((mask & MODE_BIT[m]) && !bucket[m]){ bucket[m] = true; added++; }
+    });
+  });
+  st.played = Math.max(st.played|0, payload.p|0);
+  st.won = Math.max(st.won|0, payload.w|0);
+  st.best = Math.max(st.best|0, payload.b|0);
+  Object.keys(st.days).forEach(d => { if (S.day - (+d) > 30) delete st.days[d]; });
+  recountStreak(st);
   store.stats = st; saveStore(store);
+  return {ok:true, added, streak:st.streak, best:st.best};
 }
 
 /* ============================ RENDER ============================ */
@@ -1489,9 +1590,37 @@ $("#btn-new").onclick = () => startRound(false);
 ["classic","art","effect"].forEach(k => $("#m-"+k).onclick = () => setMode(k));
 ["daily","endless"].forEach(k => $("#p-"+k).onclick = () => setPlay(k));
 
+const DEFAULT_SAVE_NOTE = $("#save-note").textContent;
+function refreshSaveCode(){ $("#save-code").value = exportCode(); }
+function saveNote(msg, kind){
+  const el = $("#save-note");
+  el.textContent = msg;
+  el.className = "savenote" + (kind ? " " + kind : "");
+}
+$("#btn-export").onclick = () => {
+  refreshSaveCode();
+  const code = $("#save-code").value;
+  const done = () => saveNote("Code copied. Paste it into the other browser and press Restore.", "good");
+  if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, () => {
+    $("#save-code").select(); saveNote("Could not reach the clipboard — the code is selected, copy it by hand.", "bad");
+  });
+  else { $("#save-code").select(); document.execCommand("copy"); done(); }
+};
+$("#btn-import").onclick = () => {
+  const result = importCode($("#load-code").value);
+  if (!result.ok){ saveNote(result.why, "bad"); return; }
+  $("#load-code").value = "";
+  refreshSaveCode();
+  render();
+  saveNote(result.streak
+    ? `Restored — ${result.streak}-day streak, best ${result.best}.`
+    : `Restored ${result.added} solved mode${result.added === 1 ? "" : "s"}, but no unbroken run reaches today.`, "good");
+};
+
 if (META.builtFrom) $("#built").textContent = " Card data built " + META.builtFrom.slice(0,10) + ".";
 migrateStats();
 startRound(true);
+refreshSaveCode();
 $("#guess").focus();
 </script>
 </body>

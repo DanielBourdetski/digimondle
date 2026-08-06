@@ -330,6 +330,29 @@ exactly "this mode was solved that day". The streak is then recounted from that
 ledger instead of trusting the old number. It is idempotent, so it runs on every
 load.
 
+### Moving a streak between browsers
+
+Everything lives in `localStorage`, so a new device or a cleared cache starts at
+nothing. "Move your streak" produces a code to paste into the other browser:
+
+```
+DGDLE1-eyJ2IjoxLCJiIjo0LCJwIjo0LCJ3IjoxMywiRCI6W1stMyw3XSxbLTIsN10...-7r21
+```
+
+Three decisions in there are worth keeping:
+
+- **The code carries the day ledger, not the streak number**, and the streak is
+  recounted from those days on the way in. A code cannot claim a run its days do
+  not support — a forged one with an empty ledger imports as zero.
+- **Days are absolute indices** from the schedule's start date, so a code means
+  the same thing on any device in any timezone.
+- **Restoring merges, it does not overwrite.** Importing on a machine where you
+  have already played today keeps today.
+
+The trailing four characters are a checksum, so a mistyped code is refused
+outright rather than importing quietly broken data. Roughly 100 characters for a
+month of history.
+
 ## Endless
 
 Every mode has a Daily and an Endless side. Endless deals from a shuffled queue
