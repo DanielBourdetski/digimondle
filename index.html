@@ -170,7 +170,7 @@ h1 .dle{color:var(--amber)}
 
 .suggest{
   position:absolute; z-index:30; top:calc(100% + 6px); left:0; right:0; margin:0; padding:0;
-  list-style:none; max-height:340px; overflow-y:auto;
+  list-style:none; max-height:420px; overflow-y:auto;
   border:1.5px solid var(--cyan); background:var(--panel); box-shadow:0 14px 36px rgba(0,0,0,.5);
 }
 .suggest:empty{display:none}
@@ -185,6 +185,13 @@ h1 .dle{color:var(--amber)}
 .suggest .nm{font-weight:600; font-size:14.5px}
 .suggest .meta{margin-left:auto; display:flex; align-items:center; gap:8px}
 .suggest .code{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
+/* not a card — it explains the cut rather than hiding it */
+.suggest li.more{
+  display:block; padding:8px 13px; cursor:default; background:var(--panel-2);
+  font-size:11.5px; color:var(--muted); letter-spacing:.02em;
+  position:sticky; bottom:0; border-top:1px solid var(--rule);
+}
+.suggest li.more b{font-family:var(--mono); color:var(--cyan); font-weight:700}
 .suggest .kind{font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); border:1px solid var(--rule); padding:2px 6px}
 /* rarity badge, tinted from SR upward so the scarce printings stand out at a
    glance without another lookup */
@@ -1502,10 +1509,11 @@ function scoreCard(s, tokens, full){
   return total;
 }
 
-let sug = [], sugIdx = -1;
+const SUGGEST_LIMIT = 12;
+let sug = [], sugIdx = -1, sugTotal = 0, sugQuery = "";
 
 function closeSuggest(){
-  sug = []; sugIdx = -1;
+  sug = []; sugIdx = -1; sugTotal = 0;
   $("#suggest").innerHTML = "";
   $("#guess").setAttribute("aria-expanded","false");
 }
@@ -1526,9 +1534,28 @@ function openSuggest(q){
   }
   // ties break on card number so the same query always lists in the same order
   hits.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? -1 : 1));
-  sug = hits.slice(0, 8).map(h => h[1]);
+  sugTotal = hits.length;
+  sugQuery = q.trim();
+  sug = hits.slice(0, SUGGEST_LIMIT).map(h => h[1]);
   sugIdx = sug.length ? 0 : -1;
   paintSuggest();
+}
+
+/* Typing "Greymon" matches 148 cards and "Agumon" 75 — the popular Digimon are
+   exactly where a silent cut hurts. Showing a dozen and saying nothing left you
+   with no way to know more existed, let alone how to reach them. So the overflow
+   row names the count and hands over a query that would actually work, built
+   from the set the top hit came from. */
+function overflowHint(){
+  const extra = sugTotal - sug.length;
+  if (extra <= 0) return "";
+  const tokens = tokenize(sugQuery);
+  const alreadyNarrowed = tokens.some(t => SEARCH.some(x => x.s === t));
+  const top = BY_ID[sug[0]];
+  const tip = alreadyNarrowed || !top
+    ? "keep typing to narrow"
+    : `add a set, like <b>${esc(top.setCode.toLowerCase())} ${esc(sugQuery)}</b>`;
+  return `<li class="more" role="presentation">+${extra} more — ${tip}</li>`;
 }
 
 function paintSuggest(){
@@ -1545,8 +1572,9 @@ function paintSuggest(){
         <span class="rar r-${esc(c.rarity || "none")}">${esc(c.rarity || "—")}</span>
       </span></li>`;
   }).join("");
+  ul.innerHTML += overflowHint();
   $("#guess").setAttribute("aria-expanded", sug.length ? "true" : "false");
-  ul.querySelectorAll("li").forEach(li => {
+  ul.querySelectorAll("li[data-id]").forEach(li => {
     li.onmousedown = e => { e.preventDefault(); submitGuess(li.dataset.id); };
   });
 }

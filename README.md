@@ -399,6 +399,21 @@ Each suggestion row shows the card's thumbnail, colour chips, card type, number
 and rarity, tinted from SR upward so the scarce printings stand out without a
 second lookup.
 
+The list holds 12 and scrolls. A silent cut was the wrong behaviour here,
+because it bites hardest exactly where people search most: `Greymon` matches
+**148** cards, `X Antibody` 107, `Agumon` 75 — 100 of the 1,889 card names
+overflow. Showing eight and saying nothing left no way to know more existed, let
+alone how to reach them. So the last row names the count and hands over a query
+that works, built from the set the top hit came from:
+
+```
++136 more — add a set, like  ad1 greymon
+```
+
+That row is also the only place the multi-token search teaches itself, and it
+appears at the moment it is useful. A test checks the suggested query really
+does narrow the list, so the tip cannot rot into bad advice.
+
 One trap worth remembering: the whole-query exact-id bonus only applies when the
 query has no spaces. `norm()` strips whitespace, so `"bt10 61"` collapses to
 `"bt1061"` and scored a spurious exact-id hit on Mistymon (BT1-061).

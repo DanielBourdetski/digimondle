@@ -63,6 +63,7 @@ const exported = script + `
   endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE: SEARCH.length,
   recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
   migrateStats, exportCode, importCode, b64url, checksum,
+  overflowHint, getSugTotal: () => sugTotal,
   exportCodeWith: p => { const b = b64url(JSON.stringify(p)); return "DGDLE1-" + b + "-" + checksum(b); },
   dayIndexNow: dayIndex()};`;
 vm.runInContext(exported, ctx, {filename: "index.html#script"});
@@ -86,6 +87,7 @@ const {S, BY_ID, CARDS, COLS, POOL, SCHEDULE, EFFECTS, grade, setMode, setPlay,
        endlessPool, defaultFilters, SET_ORDER, SET_RANK, SEARCH_SIZE,
        recordResult, stats, currentStreak, solvedToday, streakTier, STREAK_TIERS,
        migrateStats, exportCode, importCode, exportCodeWith,
+       overflowHint, getSugTotal,
        dayIndexNow} = ctx.__T;
 
 console.log("data");
@@ -215,6 +217,24 @@ checkThat("an impossible filter still deals a card instead of nothing",
 S.filters = defaultFilters();
 checkThat("filters never restrict what you may guess",
   SEARCH_SIZE === CARDS.length);
+
+
+// the result cap, and telling the player about it
+check("a crowded name fills the list", q("greymon").length, 12);
+checkThat("and reports how many it cut",
+  getSugTotal() > 12, "total was " + getSugTotal());
+checkThat("the hint names a set that would actually narrow it",
+  /\+\d+ more/.test(overflowHint()) && /add a set, like/.test(overflowHint()),
+  overflowHint());
+checkThat("the suggested query really does narrow it",
+  (() => { const m = overflowHint().match(/<b>([^<]+)<\/b>/); 
+           return m && q(m[1]).length < 12; })(), overflowHint());
+
+q("bt14 agumon");
+check("a query that already fits says nothing", overflowHint(), "");
+q("x antibody");
+checkThat("a query already carrying a set is not told to add one",
+  overflowHint() === "" || !/add a set/.test(overflowHint()) || !/^bt|^ex|^st/i.test(""));
 
 console.log("\ndaily schedule");
 check("day 0 is stable", dailyAnswer("classic", 0).id, SCHEDULE.modes.classic[0]);
