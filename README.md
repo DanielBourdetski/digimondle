@@ -399,18 +399,31 @@ Each suggestion row shows the card's thumbnail, colour chips, card type, number
 and rarity, tinted from SR upward so the scarce printings stand out without a
 second lookup.
 
-The list holds 12 and scrolls. A silent cut was the wrong behaviour here,
-because it bites hardest exactly where people search most: `Greymon` matches
-**148** cards, `X Antibody` 107, `Agumon` 75 — 100 of the 1,889 card names
-overflow. Showing eight and saying nothing left no way to know more existed, let
-alone how to reach them. So the last row names the count and hands over a query
-that works, built from the set the top hit came from:
+**Every match is listed** and the box scrolls to all of them. A cap was the wrong
+call here because it bites hardest exactly where people search most: `Greymon`
+matches **148** cards, `X Antibody` 107, `Agumon` 75 — 100 of the 1,889 card
+names overflow a list of eight.
+
+Two things keep that from being ruinous. `mon` matches **3,505** cards, and
+building that many rows at once measured **95 ms** of DOM parsing — a visible
+stutter on every keystroke — so rows go in a chunk of 30 at a time and the next
+chunk lands as you reach the bottom. That took the same keystroke to **4 ms**,
+and scrolling still reaches all 3,505. And because every row carries a
+thumbnail, suggestion images are `loading="lazy"`, so only rows you actually
+scroll past fetch anything.
+
+Lazy is safe *there* specifically because `.sug-art` is a fixed 30×42 in CSS.
+It is still absent from the art-mode image, which is `height:auto` — see the
+deadlock below.
+
+A footer names the total and hands over a query that works, built from the set
+the top hit came from:
 
 ```
-+136 more — add a set, like  ad1 greymon
+148 matches — add a set, like  ad1 greymon
 ```
 
-That row is also the only place the multi-token search teaches itself, and it
+That footer is also the only place the multi-token search teaches itself, and it
 appears at the moment it is useful. A test checks the suggested query really
 does narrow the list, so the tip cannot rot into bad advice.
 

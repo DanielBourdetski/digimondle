@@ -569,10 +569,10 @@ const IMG   = id => (BY_ID[id] && BY_ID[id].imageHost === "io") ? HOST_IO(id) : 
 const IMG_2 = id => (BY_ID[id] && BY_ID[id].imageHost === "io") ? HOST_APP(id) : HOST_IO(id);
 // digimoncard.app answers a missing card with its SPA shell, which loads as a
 // broken image rather than 404-ing, so onerror is what actually covers BT-26.
-// No loading="lazy" here. The art-mode image is sized height:auto, so before it
-// loads it is 0px tall — and a zero-height lazy image never enters the viewport
-// far enough to start loading, so it stays 0px tall forever. Guess lists are a
-// few dozen images at most, so eager loading costs nothing worth the deadlock.
+// Nothing is lazy by default. The art-mode image is sized height:auto, so before
+// it loads it is 0px tall — and a zero-height lazy image never enters the
+// viewport far enough to start loading, so it stays 0px tall forever. Callers
+// with a fixed-size box (the suggestion thumbnails) opt in through `extra`.
 const IMGTAG = (id, cls, extra) =>
   `<img class="${cls}" src="${IMG(id)}" onerror="this.onerror=null;this.src='${IMG_2(id)}'" alt="" decoding="async" ${extra||""}>`;
 
@@ -1421,11 +1421,23 @@ function scoreCard(s, tokens, full){
   return total;
 }
 
-const SUGGEST_LIMIT = 12;
-let sug = [], sugIdx = -1, sugTotal = 0, sugQuery = "";
+/* Every match is listed and the box scrolls to them all.
+
+   Two things stop that being ruinous. "mon" matches 3505 cards, and building
+   that many rows in one go measured 95ms of DOM parsing — a visible stutter on
+   every keystroke — so rows are painted a chunk at a time and the next chunk
+   goes in as you reach the bottom. And each row carries a thumbnail, so the
+   images are lazy: only the rows you actually scroll past fetch anything.
+
+   Lazy is safe *here* specifically because .sug-art is a fixed 30x42 in CSS. The
+   art-mode image is height:auto, where lazy deadlocks — it starts 0px tall, and
+   a zero-height lazy image never comes close enough to the viewport to load, so
+   it stays 0px tall forever. */
+const SUGGEST_CHUNK = 30;
+let sug = [], sugIdx = -1, sugShown = 0, sugQuery = "";
 
 function closeSuggest(){
-  sug = []; sugIdx = -1; sugTotal = 0;
+  sug = []; sugIdx = -1; sugShown = 0;
   $("#suggest").innerHTML = "";
   $("#guess").setAttribute("aria-expanded","false");
 }
@@ -1446,56 +1458,74 @@ function openSuggest(q){
   }
   // ties break on card number so the same query always lists in the same order
   hits.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? -1 : 1));
-  sugTotal = hits.length;
   sugQuery = q.trim();
-  sug = hits.slice(0, SUGGEST_LIMIT).map(h => h[1]);
+  sug = hits.map(h => h[1]);
   sugIdx = sug.length ? 0 : -1;
+  sugShown = 0;
+  $("#suggest").innerHTML = "";
   paintSuggest();
 }
 
-/* Typing "Greymon" matches 148 cards and "Agumon" 75 — the popular Digimon are
-   exactly where a silent cut hurts. Showing a dozen and saying nothing left you
-   with no way to know more existed, let alone how to reach them. So the overflow
-   row names the count and hands over a query that would actually work, built
-   from the set the top hit came from. */
-function overflowHint(){
-  const extra = sugTotal - sug.length;
-  if (extra <= 0) return "";
-  const tokens = tokenize(sugQuery);
-  const alreadyNarrowed = tokens.some(t => SEARCH.some(x => x.s === t));
+function rowHTML(id, i){
+  const c = BY_ID[id];
+  return `<li role="option" data-id="${esc(id)}" aria-selected="${i === sugIdx}">
+    ${IMGTAG(id, "sug-art", 'loading="lazy"')}
+    <span class="nm">${esc(c.name)}</span>
+    <span class="meta">
+      <span class="chips">${chipsHTML(c.colors)}</span>
+      <span class="kind">${esc(c.cardType)}</span>
+      <span class="code">${esc(c.id)}</span>
+      <span class="rar r-${esc(c.rarity || "none")}">${esc(c.rarity || "—")}</span>
+    </span></li>`;
+}
+
+/* A long list still deserves a word about how to shorten it, and the footer is
+   the only place the multi-token search teaches itself — at the moment it is
+   useful. It stays out of the way when the list is already short. */
+function footerHTML(){
+  if (sug.length <= SUGGEST_CHUNK) return "";
+  const alreadyNarrowed = tokenize(sugQuery).some(t => SEARCH.some(x => x.s === t));
   const top = BY_ID[sug[0]];
   const tip = alreadyNarrowed || !top
     ? "keep typing to narrow"
     : `add a set, like <b>${esc(top.setCode.toLowerCase())} ${esc(sugQuery)}</b>`;
-  return `<li class="more" role="presentation">+${extra} more — ${tip}</li>`;
+  return `<li class="more" role="presentation">${sug.length} matches — ${tip}</li>`;
 }
 
-function paintSuggest(){
+function growSuggest(upTo){
   const ul = $("#suggest");
-  ul.innerHTML = sug.map((id, i) => {
-    const c = BY_ID[id];
-    return `<li role="option" data-id="${esc(id)}" aria-selected="${i===sugIdx}">
-      ${IMGTAG(id,"sug-art")}
-      <span class="nm">${esc(c.name)}</span>
-      <span class="meta">
-        <span class="chips">${chipsHTML(c.colors)}</span>
-        <span class="kind">${esc(c.cardType)}</span>
-        <span class="code">${esc(c.id)}</span>
-        <span class="rar r-${esc(c.rarity || "none")}">${esc(c.rarity || "—")}</span>
-      </span></li>`;
-  }).join("");
-  ul.innerHTML += overflowHint();
-  $("#guess").setAttribute("aria-expanded", sug.length ? "true" : "false");
-  ul.querySelectorAll("li[data-id]").forEach(li => {
+  const want = Math.min(sug.length, Math.max(upTo || 0, sugShown + SUGGEST_CHUNK));
+  if (want <= sugShown) return;
+  const foot = ul.querySelector(".more");
+  if (foot) foot.remove();
+  const html = sug.slice(sugShown, want).map((id, k) => rowHTML(id, sugShown + k)).join("");
+  ul.insertAdjacentHTML("beforeend", html + footerHTML());
+  sugShown = want;
+  ul.querySelectorAll("li[data-id]:not([data-wired])").forEach(li => {
+    li.setAttribute("data-wired", "1");
     li.onmousedown = e => { e.preventDefault(); submitGuess(li.dataset.id); };
   });
 }
 
+function paintSuggest(){
+  growSuggest(SUGGEST_CHUNK);
+  $("#guess").setAttribute("aria-expanded", sug.length ? "true" : "false");
+}
+
+function selectSug(i){
+  const ul = $("#suggest");
+  const rows = ul.querySelectorAll("li[data-id]");
+  if (rows[sugIdx]) rows[sugIdx].setAttribute("aria-selected", "false");
+  sugIdx = i;
+  if (rows[sugIdx]) rows[sugIdx].setAttribute("aria-selected", "true");
+}
+
 function moveSug(d){
   if (!sug.length) return;
-  sugIdx = (sugIdx + d + sug.length) % sug.length;
-  paintSuggest();
-  const el = $("#suggest").children[sugIdx];
+  const next = (sugIdx + d + sug.length) % sug.length;
+  growSuggest(next + 1);                 // arrowing past the painted edge paints more
+  selectSug(next);
+  const el = $("#suggest").querySelectorAll("li[data-id]")[sugIdx];
   if (el) el.scrollIntoView({block:"nearest"});
 }
 
@@ -1524,6 +1554,10 @@ $("#guess").addEventListener("keydown", e => {
   else if (e.key === "Escape") closeSuggest();
 });
 $("#guess").addEventListener("blur", () => setTimeout(closeSuggest, 120));
+$("#suggest").addEventListener("scroll", e => {
+  const ul = e.currentTarget;
+  if (ul.scrollTop + ul.clientHeight > ul.scrollHeight - 240) growSuggest();
+});
 $("#submit").onclick = () => { if (sugIdx >= 0) submitGuess(sug[sugIdx]); else $("#guess").focus(); };
 $("#btn-give").onclick = giveUp;
 $("#btn-new").onclick = () => startRound(false);
