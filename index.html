@@ -12,44 +12,57 @@
    Digivice terminal. Dark-first, because the card art is dark
    and saturated and looks wrong floating on white.
    ============================================================ */
+/* The palette is five colours — #23065C #ECECEC #9FB1D9 #100A30 #3C0C7D —
+   three purples, a periwinkle and a near-white, with nothing warm in it. So the
+   ladders here are built out of lightness rather than hue: white reads as
+   right, periwinkle as partly right, purple as wrong, and the same three steps
+   run the rest of the interface. A handful of shades are derived where the
+   structure needs a step the five do not provide — a field sunk below the
+   background, a rule light enough to see against #23065C, and on the light
+   theme a periwinkle dark enough to carry white text. */
 :root{
-  --bg:#0B0F16; --panel:#141A24; --panel-2:#1B2330; --sunk:#080B11;
-  --ink:#E9EFF7; --muted:#8595AA; --rule:#2C3746; --rule-soft:#222B38;
-  --amber:#FF6B1A; --cyan:#2FE3E3; --cyan-dim:#1C8C8C;
-  --hit:#1E9E6A; --near:#C9962A; --miss:#3A4453;
-  --on-state:#06090D;
-  --grid-line:rgba(47,227,227,.055);
+  --bg:#100A30; --panel:#23065C; --panel-2:#3C0C7D; --sunk:#0A0622;
+  --ink:#ECECEC; --muted:#9FB1D9; --rule:#4E1A9E; --rule-soft:#3C0C7D;
+  --amber:#ECECEC; --amber-text:#9FB1D9; --cyan:#9FB1D9; --cyan-dim:#5E6B96;
+  --hit:#ECECEC; --near:#9FB1D9; --miss:#3C0C7D;
+  --on-state:#100A30; --on-fill:#100A30;
+  --grid-line:rgba(159,177,217,.05);
   --cut:10px;
   --display:"Bahnschrift","DIN Alternate","Franklin Gothic Medium Cond","Arial Narrow",system-ui,sans-serif;
   --body:"Segoe UI",system-ui,-apple-system,sans-serif;
   --mono:"Consolas","SF Mono",ui-monospace,monospace;
 }
+/* Light runs the same five the other way up: #ECECEC becomes the room, #100A30
+   becomes the ink, and every fill flips from light to dark — which is why
+   --on-fill lives in the theme blocks rather than above them. Text on a fill is
+   dark here and light there, and one value cannot be both. */
 @media (prefers-color-scheme:light){
   :root{
-    --bg:#DFE5EC; --panel:#F4F7FA; --panel-2:#E7ECF3; --sunk:#CDD6E0;
-    --ink:#101720; --muted:#5A6879; --rule:#9CACBE; --rule-soft:#C2CEDC;
-    --amber:#D9490A; --cyan:#0E8A8A; --cyan-dim:#7FC4C4;
-    --hit:#187C53; --near:#9A7212; --miss:#8494A6;
-    --on-state:#FFFFFF;
-    --grid-line:rgba(16,23,32,.05);
+    --bg:#ECECEC; --panel:#FFFFFF; --panel-2:#E1E4F0; --sunk:#FFFFFF;
+    --ink:#100A30; --muted:#3C0C7D; --rule:#9FB1D9; --rule-soft:#C9D2E6;
+    --amber:#3C0C7D; --amber-text:#3C0C7D; --cyan:#23065C; --cyan-dim:#9FB1D9;
+    --hit:#3C0C7D; --near:#516196; --miss:#C9D2E6;
+    --on-state:#ECECEC; --on-fill:#ECECEC;
+    --grid-line:rgba(16,10,48,.06);
   }
 }
 :root[data-theme="light"]{
-  --bg:#DFE5EC; --panel:#F4F7FA; --panel-2:#E7ECF3; --sunk:#CDD6E0;
-  --ink:#101720; --muted:#5A6879; --rule:#9CACBE; --rule-soft:#C2CEDC;
-  --amber:#D9490A; --cyan:#0E8A8A; --cyan-dim:#7FC4C4;
-  --hit:#187C53; --near:#9A7212; --miss:#8494A6;
-  --on-state:#FFFFFF;
-  --grid-line:rgba(16,23,32,.05);
+  --bg:#ECECEC; --panel:#FFFFFF; --panel-2:#E1E4F0; --sunk:#FFFFFF;
+  --ink:#100A30; --muted:#3C0C7D; --rule:#9FB1D9; --rule-soft:#C9D2E6;
+  --amber:#3C0C7D; --amber-text:#3C0C7D; --cyan:#23065C; --cyan-dim:#9FB1D9;
+  --hit:#3C0C7D; --near:#516196; --miss:#C9D2E6;
+  --on-state:#ECECEC; --on-fill:#ECECEC;
+  --grid-line:rgba(16,10,48,.06);
 }
 :root[data-theme="dark"]{
-  --bg:#0B0F16; --panel:#141A24; --panel-2:#1B2330; --sunk:#080B11;
-  --ink:#E9EFF7; --muted:#8595AA; --rule:#2C3746; --rule-soft:#222B38;
-  --amber:#FF6B1A; --cyan:#2FE3E3; --cyan-dim:#1C8C8C;
-  --hit:#1E9E6A; --near:#C9962A; --miss:#3A4453;
-  --on-state:#06090D;
-  --grid-line:rgba(47,227,227,.055);
+  --bg:#100A30; --panel:#23065C; --panel-2:#3C0C7D; --sunk:#0A0622;
+  --ink:#ECECEC; --muted:#9FB1D9; --rule:#4E1A9E; --rule-soft:#3C0C7D;
+  --amber:#ECECEC; --amber-text:#9FB1D9; --cyan:#9FB1D9; --cyan-dim:#5E6B96;
+  --hit:#ECECEC; --near:#9FB1D9; --miss:#3C0C7D;
+  --on-state:#100A30; --on-fill:#100A30;
+  --grid-line:rgba(159,177,217,.05);
 }
+
 
 /* the six card colours, kept apart from the hit/near/miss palette on purpose */
 :root{
@@ -80,7 +93,7 @@ body::before{
    from adding scrollable height of its own. */
 #bg-layer{display:none; position:absolute; inset:0; overflow:hidden; z-index:0; pointer-events:none}
 #grid-bg{position:absolute; left:0; width:100%; display:block}
-body.canvasbg{position:relative; min-height:100vh; background:#070B1E}
+body.canvasbg{position:relative; min-height:100vh; background:#100A30}
 body.canvasbg::before{content:none}
 body.canvasbg #bg-layer{display:block}
 .wrap{position:relative; z-index:1; max-width:1140px; margin:0 auto; padding:24px 16px 72px}
@@ -96,7 +109,7 @@ h1{
   font-family:var(--display); font-weight:700; margin:0;
   font-size:clamp(36px,7.4vw,58px); line-height:.9; letter-spacing:-.01em; text-transform:uppercase;
 }
-h1 .dle{color:var(--amber)}
+h1 .dle{color:var(--amber-text)}
 .tagline{margin:9px 0 0; color:var(--muted); font-size:14px; max-width:60ch}
 .tagline b{color:var(--ink); font-weight:600}
 
@@ -133,7 +146,7 @@ h1 .dle{color:var(--amber)}
   font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:700;
   color:var(--muted); font-family:var(--mono);
 }
-.remind .pip.on{color:var(--hit)}
+.remind .pip.on{color:var(--amber-text)}
 .remind .msg{font-size:12.5px}
 
 /* ---------- endless pool filters ---------- */
@@ -161,7 +174,7 @@ h1 .dle{color:var(--amber)}
 .rtog:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
 .filters .count-line{font-family:var(--mono); font-size:12px; color:var(--muted)}
 .filters .count-line b{color:var(--ink)}
-.filters .count-line.empty{color:var(--amber)}
+.filters .count-line.empty{color:var(--amber-text)}
 .filters .reset{margin-left:auto}
 
 /* ---------- guess input ---------- */
@@ -172,11 +185,11 @@ h1 .dle{color:var(--amber)}
   border:1.5px solid var(--rule); background:var(--sunk); color:var(--ink);
 }
 #guess::placeholder{color:var(--muted)}
-#guess:focus{outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(47,227,227,.13)}
+#guess:focus{outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(159,177,217,.16)}
 #guess:disabled{opacity:.45}
 .go{
   font-family:var(--display); font-size:17px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
-  padding:0 24px; border:1.5px solid var(--amber); background:var(--amber); color:#0B0F16;
+  padding:0 24px; border:1.5px solid var(--amber); background:var(--amber); color:var(--on-fill);
   cursor:pointer; transition:filter .15s;
 }
 .go:hover{filter:brightness(1.14)}
@@ -216,7 +229,7 @@ h1 .dle{color:var(--amber)}
 }
 .suggest .r-SR{border-color:var(--cyan-dim); color:var(--cyan)}
 .suggest .r-UR,
-.suggest .r-SEC{border-color:var(--amber); color:var(--amber)}
+.suggest .r-SEC{border-color:var(--amber); color:var(--amber-text)}
 .suggest .r-P{border-color:var(--near); color:var(--near)}
 
 /* colour chips — never rendered as bare text, so a "Green" value can't be
@@ -235,7 +248,7 @@ h1 .dle{color:var(--amber)}
 }
 .gauge i:last-child{border-right:0}
 .gauge i.zero{color:var(--ink); font-weight:700}
-.gauge i.spent{background:var(--amber); color:#0B0F16; font-weight:700}
+.gauge i.spent{background:var(--amber); color:var(--on-fill); font-weight:700}
 .gauge i.now{background:var(--cyan); color:var(--on-state); font-weight:700}
 .count{font-family:var(--mono); font-size:12.5px; color:var(--muted); letter-spacing:.03em}
 .count b{color:var(--ink); font-size:14.5px}
@@ -293,7 +306,7 @@ h1 .dle{color:var(--amber)}
   position:relative; min-height:80px; display:flex; flex-direction:column;
   align-items:center; justify-content:center; text-align:center; padding:9px 6px;
   font-size:11.5px; font-weight:600; line-height:1.3; letter-spacing:.02em;
-  text-transform:uppercase; color:var(--on-state); overflow:hidden;
+  text-transform:uppercase; color:var(--on-fill); overflow:hidden;
 }
 .tile.hit{background:var(--hit)}
 .tile.near{background:var(--near)}
@@ -408,7 +421,7 @@ h1 .dle{color:var(--amber)}
 /* ---------- result ---------- */
 .result{border:1.5px solid var(--rule); background:var(--panel); padding:22px; margin:24px 0 6px}
 .result.win{border-color:var(--hit)}
-.result.lose{border-color:var(--amber)}
+.result.lose{border-color:var(--muted)}
 .result-inner{display:flex; gap:22px; align-items:flex-start}
 .result-body{flex:1 1 auto; min-width:0}
 .cardshot{width:190px; flex:none; border:1.5px solid var(--rule); background:var(--sunk); animation:reveal .5s ease both}
@@ -433,8 +446,8 @@ h1 .dle{color:var(--amber)}
 .saverow input:focus{outline:none; border-color:var(--cyan)}
 .saverow input::placeholder{color:var(--muted)}
 .savenote{font-size:12.5px; color:var(--muted); max-width:70ch; margin:10px 0 0}
-.savenote.good{color:var(--hit)}
-.savenote.bad{color:var(--amber)}
+.savenote.good{color:var(--cyan)}
+.savenote.bad{color:var(--amber-text)}
 
 /* ---------- misc ---------- */
 details.how{margin-top:38px; border-top:1.5px solid var(--rule); padding-top:16px}
@@ -473,13 +486,13 @@ footer a{color:var(--cyan)}
     <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
       <defs>
         <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#2FE3E3"/><stop offset="100%" stop-color="#1C6FA8"/>
+          <stop offset="0" stop-color="#9FB1D9"/><stop offset="100%" stop-color="#3C0C7D"/>
         </linearGradient>
       </defs>
       <!-- a digi-egg: the thing every Digimon starts as -->
       <path d="M50 6 C72 6 88 32 88 56 C88 78 71 94 50 94 C29 94 12 78 12 56 C12 32 28 6 50 6 Z"
-            fill="url(#eg)" stroke="#FF6B1A" stroke-width="4"/>
-      <g fill="#0B0F16" opacity=".72">
+            fill="url(#eg)" stroke="#ECECEC" stroke-width="4"/>
+      <g fill="#100A30" opacity=".72">
         <path d="M50 22 L60 34 L50 46 L40 34 Z"/>
         <circle cx="31" cy="58" r="6"/><circle cx="69" cy="58" r="6"/>
         <path d="M34 74 h32 v7 h-32 z"/>
@@ -1124,8 +1137,8 @@ const STREAK_TIERS = [
   {at: 2,  name: "In-Training", tone: "var(--cyan-dim)"},
   {at: 3,  name: "Rookie",      tone: "var(--cyan)"},
   {at: 5,  name: "Champion",    tone: "var(--cyan)"},
-  {at: 10, name: "Ultimate",    tone: "var(--amber)"},
-  {at: 20, name: "Mega",        tone: "var(--amber)"}
+  {at: 10, name: "Ultimate",    tone: "var(--amber-text)"},
+  {at: 20, name: "Mega",        tone: "var(--amber-text)"}
 ];
 const streakTier = n => STREAK_TIERS.filter(t => n >= t.at).pop() || STREAK_TIERS[0];
 
@@ -1788,10 +1801,10 @@ addEventListener("resize", () => PEEK.hide());
    them and added back over the backdrop. Dark theme only; see the CSS note. */
 (() => {
   const CFG = {
-    bgEdge:   '#070B1E',    // backdrop at the edges — the normal level
-    bgCore:   '#03050E',    // backdrop in the middle, where the game sits
-    line:     '90,120,255', // grid line rgb
-    core:     '175,195,255',// bright inner strand rgb
+    bgEdge:   '#100A30',    // backdrop at the edges — the normal level
+    bgCore:   '#080518',    // backdrop in the middle, where the game sits
+    line:     '159,177,217',// grid line rgb — #9FB1D9
+    core:     '236,236,236',// bright inner strand rgb — #ECECEC
     spacing:  78,           // px between lines (auto-clamped to viewport)
     pool:     0.30,         // resting brightness of the grid out at the edges
     sink:     0.30,         // share of that left in the middle (inverse vignette)
