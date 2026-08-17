@@ -498,6 +498,14 @@ footer a{color:var(--cyan)}
 .dbg button{font-family:var(--body); cursor:pointer; background:transparent; color:#E8EAF2;
   border:1px solid #3A4256; padding:5px 9px; font-size:11px; letter-spacing:.08em; text-transform:uppercase}
 .dbg button:hover{border-color:#7FB2FF; color:#7FB2FF}
+/* the ready-made palettes: a colour dot and the name of what it came from */
+.dbg-presets{padding:10px 14px 4px; border-bottom:1px solid #2A3040}
+.dbg-presets .lab{display:block; font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+  color:#98A2B8; font-weight:700; margin-bottom:7px}
+.dbg-plist{display:flex; flex-wrap:wrap; gap:6px; padding-bottom:8px}
+.dbg-preset{display:inline-flex; align-items:center; gap:6px}
+.dbg-preset i{width:11px; height:11px; display:block; border:1px solid rgba(0,0,0,.4)}
+.dbg-preset.on{border-color:#7FB2FF; color:#7FB2FF}
 .dbg-rows{padding:8px}
 .dbg-row{display:flex; align-items:center; gap:9px; padding:3px 6px}
 .dbg-row.on{background:#1E2434}
@@ -2249,6 +2257,75 @@ function okToHex(L, C, h){
   return okRGBHex(rgb);
 }
 
+/* ---- ready-made palettes ----
+   Each one is the four bases plus the tokens that come out of them, captured
+   from a run through the panel. They are named for where the highlight colour
+   came from: the show is the source, not a colour picker. Applying one sets the
+   bases and re-measures every distance against them, so the wheel carries on
+   working from there — a palette is a starting point, not a lock. */
+const DBG_PRESETS = [
+  {
+    name: "Agumon orange", from: "Agumon, and several of the title cards",
+    bases: {deep: "#100A30", purple: "#3C0C7D", peri: "#9FB1D9", white: "#F3741F"},
+    dark: {
+      "--bg":"#100A30", "--sunk":"#0A0622", "--on-state":"#100A30", "--on-fill":"#100A30",
+      "--canvas-edge":"#100A30", "--canvas-core":"#080518",
+      "--panel":"#23065C", "--panel-2":"#3C0C7D", "--rule":"#4E1A9E", "--rule-soft":"#3C0C7D",
+      "--miss":"#3C0C7D", "--muted":"#9FB1D9", "--cyan":"#9FB1D9", "--amber-text":"#9FB1D9",
+      "--near":"#9FB1D9", "--cyan-dim":"#5E6B96", "--grid-line":"rgba(159,177,217,0.05)",
+      "--canvas-line":"#9FB1D9", "--ink":"#F3741F", "--amber":"#F3741F", "--hit":"#F3741F",
+      "--canvas-strand":"#F3741F"
+    },
+    light: {
+      "--bg":"#F3741F", "--sunk":"#FF8C4B", "--on-state":"#F3741F", "--on-fill":"#F3741F",
+      "--panel":"#FF8C4B", "--panel-2":"#00A4DE", "--rule":"#9FB1D9", "--rule-soft":"#C9D2E6",
+      "--miss":"#C9D2E6", "--muted":"#3C0C7D", "--cyan":"#23065C", "--amber-text":"#3C0C7D",
+      "--near":"#516196", "--cyan-dim":"#9FB1D9", "--grid-line":"rgba(16,10,48,0.06)",
+      "--ink":"#100A30", "--amber":"#3C0C7D", "--hit":"#3C0C7D"
+    }
+  },
+  {
+    name: "Title yellow", from: "some of the title cards",
+    bases: {deep: "#100A30", purple: "#3C0C7D", peri: "#9FB1D9", white: "#F3C91E"},
+    dark: {
+      "--bg":"#100A30", "--sunk":"#0A0622", "--on-state":"#100A30", "--on-fill":"#100A30",
+      "--canvas-edge":"#100A30", "--canvas-core":"#080518",
+      "--panel":"#23065C", "--panel-2":"#3C0C7D", "--rule":"#4E1A9E", "--rule-soft":"#3C0C7D",
+      "--miss":"#3C0C7D", "--muted":"#9FB1D9", "--cyan":"#9FB1D9", "--amber-text":"#9FB1D9",
+      "--near":"#9FB1D9", "--cyan-dim":"#5E6B96", "--grid-line":"rgba(159,177,217,0.05)",
+      "--canvas-line":"#9FB1D9", "--ink":"#F3C91E", "--amber":"#F3C91E", "--hit":"#F3C91E",
+      "--canvas-strand":"#F3C91E"
+    },
+    light: {
+      "--bg":"#F3C91E", "--sunk":"#FFDD6A", "--on-state":"#F3C91E", "--on-fill":"#F3C91E",
+      "--panel":"#FFDD6A", "--panel-2":"#B8C1FF", "--rule":"#9FB1D9", "--rule-soft":"#C9D2E6",
+      "--miss":"#C9D2E6", "--muted":"#3C0C7D", "--cyan":"#23065C", "--amber-text":"#3C0C7D",
+      "--near":"#516196", "--cyan-dim":"#9FB1D9", "--grid-line":"rgba(16,10,48,0.06)",
+      "--ink":"#100A30", "--amber":"#3C0C7D", "--hit":"#3C0C7D"
+    }
+  },
+  {
+    name: "Shoutmon red", from: "Shoutmon and Taiki Kudo",
+    bases: {deep: "#100A30", purple: "#3C0C7D", peri: "#D9FFEE", white: "#EB2C2B"},
+    dark: {
+      "--bg":"#100A30", "--sunk":"#0A0622", "--on-state":"#100A30", "--on-fill":"#100A30",
+      "--canvas-edge":"#100A30", "--canvas-core":"#080518",
+      "--panel":"#23065C", "--panel-2":"#3C0C7D", "--rule":"#4E1A9E", "--rule-soft":"#3C0C7D",
+      "--miss":"#3C0C7D", "--muted":"#D9FFEE", "--cyan":"#D9FFEE", "--amber-text":"#D9FFEE",
+      "--near":"#D9FFEE", "--cyan-dim":"#8AB7A7", "--grid-line":"rgba(217,255,238,0.05)",
+      "--canvas-line":"#D9FFEE", "--ink":"#EB2C2B", "--amber":"#EB2C2B", "--hit":"#EB2C2B",
+      "--canvas-strand":"#EB2C2B"
+    },
+    light: {
+      "--bg":"#EB2C2B", "--sunk":"#FF463F", "--on-state":"#EB2C2B", "--on-fill":"#EB2C2B",
+      "--panel":"#FF463F", "--panel-2":"#008B9F", "--rule":"#D9FFEE", "--rule-soft":"#FEFFFF",
+      "--miss":"#FEFFFF", "--muted":"#3C0C7D", "--cyan":"#23065C", "--amber-text":"#3C0C7D",
+      "--near":"#73B19C", "--cyan-dim":"#D9FFEE", "--grid-line":"rgba(16,10,48,0.06)",
+      "--ink":"#100A30", "--amber":"#3C0C7D", "--hit":"#3C0C7D"
+    }
+  }
+];
+
 /* ---- HSV, for the wheel: hue is the angle, saturation the radius ---- */
 function hsv2hex(h, s, v){
   const f = n => {
@@ -2346,7 +2423,7 @@ const dbgPaint = (hex, alpha) => alpha === null ? hex
 const DEBUG = (() => {
   const root = document.documentElement;
   let back = null, sel = {kind: "base", key: "deep"}, committed = null, offset = null;
-  let base = {}, alpha = {dark: {}, light: {}}, wheel = null;
+  let base = {}, alpha = {dark: {}, light: {}}, wheel = null, preset = null;
   const write = hex => sel.kind === "base" ? setBase(sel.key, hex) : setToken(sel.key, hex);
 
   const theme = () => (root.dataset.theme
@@ -2418,7 +2495,7 @@ const DEBUG = (() => {
     sync();
   }
 
-  function setBase(k, hex){ base[k] = hex.toUpperCase(); paint(); }
+  function setBase(k, hex){ base[k] = hex.toUpperCase(); preset = null; paint(); }
   function resetBase(k){
     delete base[k];
     for (const th of ["dark", "light"]) for (const tok of DBG_TOKENS)
@@ -2428,7 +2505,28 @@ const DEBUG = (() => {
       }
     paint();
   }
-  function resetAll(){ base = {}; measure(); DBG_TOKENS.forEach(t => root.style.removeProperty(t)); paint(); }
+  function resetAll(){ base = {}; preset = null; measure(); DBG_TOKENS.forEach(t => root.style.removeProperty(t)); paint(); }
+
+  /* A palette is applied as bases plus distances, not as a set of frozen
+     values: every token it names is re-measured against the palette's own base,
+     so dragging a base afterwards moves the family exactly as it would have. A
+     token the palette leaves out — the canvas colours on the light theme, which
+     nothing ever sees — keeps the distance it was committed with. */
+  function applyPreset(pre){
+    measure();
+    preset = pre.name;
+    base = Object.assign({}, pre.bases);
+    for (const th of ["dark", "light"]){
+      for (const tok in (pre[th] || {})){
+        if (!DBG_MAP[th][tok]) continue;
+        const v = dbgParse(pre[th][tok]);
+        alpha[th][tok] = v.alpha;
+        const a = okFromHex(v.hex), b = okFromHex(base[DBG_MAP[th][tok]]);
+        offset[th][tok] = {L: a.L - b.L, C: a.C - b.C, h: ((a.h - b.h) % 360 + 540) % 360 - 180};
+      }
+    }
+    paint();
+  }
 
   // an individual token is edited by rewriting its distance from its base, so
   // it keeps whatever new relationship you gave it the next time the base moves
@@ -2463,6 +2561,8 @@ const DEBUG = (() => {
       row.querySelector(".hx").textContent = hex;
       row.classList.toggle("on", k ? (sel.kind === "base" && sel.key === k) : (sel.kind === "token" && sel.key === tok));
     }
+    for (const b of back.querySelectorAll(".dbg-preset"))
+      b.classList.toggle("on", b.dataset.preset === (preset || ""));
     back.querySelector("#dbg-name").textContent = sel.kind === "base"
       ? DBG_BASES.find(b => b.k === sel.key).name : sel.key;
     wheel.show(sel.kind === "base" ? baseNow(sel.key) : derive(th, sel.key));
@@ -2508,6 +2608,7 @@ const DEBUG = (() => {
     back.innerHTML = `<div class="dbg" role="dialog" aria-label="Colour debug">
       <div class="dbg-head"><h2>Palette</h2><span class="sp"></span>
         <button id="dbg-close" title="Close (Esc)">Close</button></div>
+      <div class="dbg-presets"><span class="lab">Palettes</span><div class="dbg-plist"></div></div>
       <div class="dbg-rows"></div>
       <div class="dbg-pick">
         <span class="lab">Editing <span id="dbg-name"></span></span>
@@ -2529,6 +2630,24 @@ const DEBUG = (() => {
         <button id="dbg-reset-all">Reset all colors</button>
       </div>
     </div>`;
+
+    const plist = back.querySelector(".dbg-plist");
+    for (const pre of DBG_PRESETS){
+      const btn = document.createElement("button");
+      btn.className = "dbg-preset";
+      btn.dataset.preset = pre.name;
+      btn.title = `From ${pre.from}`;
+      btn.innerHTML = `<i style="background:${pre.bases.white}"></i>${pre.name}`;
+      btn.addEventListener("click", () => applyPreset(pre));
+      plist.appendChild(btn);
+    }
+    const back0 = document.createElement("button");
+    back0.className = "dbg-preset";
+    back0.dataset.preset = "";
+    back0.title = "The palette as it ships";
+    back0.innerHTML = `<i style="background:#ECECEC"></i>Committed`;
+    back0.addEventListener("click", resetAll);
+    plist.appendChild(back0);
 
     const rows = back.querySelector(".dbg-rows");
     for (const b of DBG_BASES){
