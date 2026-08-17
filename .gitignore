@@ -11,3 +11,8 @@ data/build/stats.json
 __pycache__/
 *.pyc
 .jscheck.js
+
+# Screenshot runs and scratch pages used while working on the layout.
+shots/
+shots-*/
+work/

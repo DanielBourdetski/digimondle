@@ -23,13 +23,27 @@ function makeEl(){
     attrs: {},
     setAttribute(k, v){ this.attrs[k] = v; },
     getAttribute(k){ return this.attrs[k]; },
+    removeAttribute(k){ delete this.attrs[k]; },
     addEventListener(){}, focus(){}, scrollIntoView(){},
     querySelector(){ return null; },
     querySelectorAll(){ return []; },
     insertAdjacentHTML(){}, remove(){},
-    classList: {add(){}, remove(){}, contains(){ return false; }}
+    appendChild(child){ this.children.push(child); return child; },
+    getBoundingClientRect(){ return {top:0, left:0, right:0, bottom:0, width:0, height:0}; },
+    // the background canvas: enough of a 2d context that the module can be
+    // constructed. It never draws here — the stub reports a light theme, and
+    // the canvas only runs on dark.
+    getContext(){ return makeCtx(); },
+    classList: {add(){}, remove(){}, contains(){ return false; }, toggle(){}}
   };
   return el;
+}
+function makeCtx(){
+  return {
+    setTransform(){}, clearRect(){}, fillRect(){}, stroke(){}, drawImage(){},
+    save(){}, restore(){},
+    createRadialGradient(){ return {addColorStop(){}}; }
+  };
 }
 const els = {};
 const doc = {
@@ -37,8 +51,10 @@ const doc = {
   body: makeEl(),
   querySelector(sel){ return els[sel] || (els[sel] = makeEl()); },
   querySelectorAll(){ return []; },
+  getElementById(id){ return els["#"+id] || (els["#"+id] = makeEl()); },
   createElement(){ return makeEl(); },
-  addEventListener(){}
+  addEventListener(){},
+  hidden: false
 };
 const store = {};
 const ctx = {
@@ -50,6 +66,14 @@ const ctx = {
   },
   navigator: {},
   btoa, atob,                       // the streak code is base64
+  // the background canvas asks for these on load; reporting a light theme keeps
+  // it dormant, which is what we want in a headless run
+  matchMedia: () => ({matches: false, addEventListener(){}}),
+  requestAnimationFrame(){ return 0; },
+  performance: {now: () => 0},
+  addEventListener(){},
+  innerWidth: 1440, innerHeight: 900, devicePixelRatio: 1,
+  Path2D: class { moveTo(){} lineTo(){} },
   setTimeout, clearTimeout, console,
   Date, Math, JSON, Object, Array, String, Number, RegExp, Set, Map, Error
 };

@@ -69,6 +69,20 @@ body::before{
                    linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
   background-size:34px 34px;
 }
+/* The lit canvas grid is the dark backdrop. It only runs when the dark theme is
+   active — its palette is built around light added onto near-black, and on the
+   light theme the same passes just wash out. Light keeps the flat CSS grid, and
+   so does a browser with no JS, so the room never loses its floor.
+
+   The canvas scrolls with the page rather than being pinned to the viewport —
+   see the note in the script. That means it lives in the document, and the
+   layer around it is what stops a canvas hanging past the last row of the board
+   from adding scrollable height of its own. */
+#bg-layer{display:none; position:absolute; inset:0; overflow:hidden; z-index:0; pointer-events:none}
+#grid-bg{position:absolute; left:0; width:100%; display:block}
+body.canvasbg{position:relative; min-height:100vh; background:#070B1E}
+body.canvasbg::before{content:none}
+body.canvasbg #bg-layer{display:block}
 .wrap{position:relative; z-index:1; max-width:1140px; margin:0 auto; padding:24px 16px 72px}
 
 /* the clipped corner is the motif — it echoes the card frame */
@@ -354,6 +368,36 @@ h1 .dle{color:var(--amber)}
 .wrong .n{font-size:13px; font-weight:600; text-decoration:line-through}
 .wrong .c{font-family:var(--mono); font-size:11px; opacity:.75}
 
+/* ---------- card peek ----------
+   The thumbnail on a guessed entry stays small; the card itself opens on hover,
+   on keyboard focus and on tap. One fixed node parked on body rather than a
+   popup inside each row: .board is an overflow container, and overflow clips on
+   both axes once it is set on either, so an in-row popup would be cut off. */
+[data-peek]{cursor:zoom-in}
+[data-peek]:focus-visible{outline:2px solid var(--cyan); outline-offset:2px}
+/* The panel grows out of the thumbnail it belongs to rather than appearing next
+   to it, so the small card and the big one read as the same object. Every step
+   of that is transform and opacity — both composited, so the zoom does not
+   fight the background canvas for main-thread time. The transform itself is
+   set from the script, which is the only place the thumbnail's rectangle is
+   known; the stylesheet owns the timing. */
+#peek-pop{
+  position:fixed; z-index:70; width:210px; pointer-events:none;
+  border:1.5px solid var(--rule); background:var(--sunk);
+  box-shadow:0 14px 34px rgba(0,0,0,.5);
+  transform-origin:0 0; opacity:0;
+  transition:opacity .12s ease-in, transform .13s cubic-bezier(.4,0,.7,.4);
+}
+/* out is quicker than in, and lands rather than eases, the way a card dropped
+   back on the pile does */
+#peek-pop.show{
+  opacity:1;
+  transition:opacity .12s ease-out, transform .19s cubic-bezier(.2,.8,.3,1);
+}
+#peek-pop img{display:block; width:100%; aspect-ratio:430/601; object-fit:cover}
+/* a 210px card is most of a phone screen once it is 294px tall */
+@media (max-width:560px){#peek-pop{width:150px}}
+
 /* ---------- effect mode ---------- */
 .rules{border:1.5px solid var(--rule); background:var(--panel); padding:20px 22px; margin-bottom:18px}
 .rules .lab{font-size:9.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--cyan); font-weight:700; display:block; margin-bottom:5px}
@@ -421,6 +465,8 @@ footer a{color:var(--cyan)}
   .gauge i{width:21px; font-size:10px}
 }
 </style>
+
+<div id="bg-layer" aria-hidden="true"><canvas id="grid-bg"></canvas></div>
 
 <div class="wrap">
   <header class="masthead">
@@ -663,6 +709,10 @@ const IMG_2 = id => (BY_ID[id] && BY_ID[id].imageHost === "io") ? HOST_APP(id) :
 // with a fixed-size box (the suggestion thumbnails) opt in through `extra`.
 const IMGTAG = (id, cls, extra) =>
   `<img class="${cls}" src="${IMG(id)}" onerror="this.onerror=null;this.src='${IMG_2(id)}'" alt="" decoding="async" ${extra||""}>`;
+
+// the thumbnail on a guessed entry doubles as the handle for the peek panel
+const peekAttrs = card =>
+  `tabindex="0" role="button" data-peek="${esc(card.id)}" aria-label="Show ${esc(card.name)} full size"`;
 
 // Form used to sit between dp and attribute and is gone on purpose: it mostly
 // restated Level (Rookie/Champion/Ultimate/Mega track Lv.3/4/5/6 almost one to
@@ -1271,7 +1321,7 @@ function gridHTML(){
   const head = `<div class="row head">${COLS.map(c => `<span>${c.lab}</span>`).join("")}</div>`;
   const rows = S.guesses.slice().reverse().map((g, ri) => {
     const isFresh = ri < S.fresh;
-    const name = `<div class="namecell">${IMGTAG(g.id,"avatar")}
+    const name = `<div class="namecell">${IMGTAG(g.id,"avatar",peekAttrs(g))}
         <span class="n">${esc(g.name)}</span><span class="code">${esc(g.id)}</span></div>`;
     const tiles = COLS.map((col, i) => {
       const res = grade(g, S.answer, col);
@@ -1307,7 +1357,7 @@ function wrongsHTML(){
   if (!S.guesses.length) return "";
   const rows = S.guesses.slice().reverse()
     .filter(g => g.id !== S.answer.id)
-    .map(g => `<div class="wrong">${IMGTAG(g.id,"")}
+    .map(g => `<div class="wrong">${IMGTAG(g.id,"",peekAttrs(g))}
         <span class="n">${esc(g.name)}</span><span class="c">${esc(g.id)}</span></div>`).join("");
   return `<div class="wrongs">${rows}</div>`;
 }
@@ -1631,6 +1681,329 @@ function setPlay(p){
   $("#guess").value = ""; closeSuggest();
   startRound(true);
 }
+
+/* ============================ CARD PEEK ============================ */
+/* Hover, focus or tap a guessed entry's thumbnail and the card opens beside it.
+   The panel is created once and moved, so a re-render of the board — which
+   happens on every guess — never leaves a stale one behind. */
+const PEEK = (() => {
+  const pop = document.createElement("div");
+  pop.id = "peek-pop";
+  pop.setAttribute("aria-hidden", "true");
+  pop.innerHTML = '<img alt="" decoding="async">';
+  document.body.appendChild(pop);
+  const img = pop.querySelector("img");
+  let cur = null, anchor = null;
+
+  // beside the thumbnail if there is room on the right, otherwise flipped to
+  // its left; clamped so the bottom of the card never leaves the viewport.
+  // Width comes from the stylesheet, which narrows it on a phone.
+  function spot(r){
+    const W = pop.offsetWidth || 210, H = W * 601 / 430;
+    let x = r.right + 12;
+    if (x + W > innerWidth - 8) x = r.left - W - 12;
+    if (x < 8) x = Math.min(8, innerWidth - W - 8);
+    const y = Math.min(Math.max(8, r.top + r.height / 2 - H / 2), innerHeight - H - 8);
+    return {x, y, W, H};
+  }
+
+  // The transform that would sit the panel exactly on top of `from` — the same
+  // one whether `from` is the thumbnail (opening: a real zoom) or the panel's
+  // own last position (moving between entries: a slide, since the widths match
+  // and the scale comes out at 1). transform-origin is the top-left corner, so
+  // the translation is corner to corner and only the centring is worked out.
+  function onto(from, at){
+    const s = from.width / at.W;
+    const dx = from.left - at.x;
+    const dy = (from.top + from.height / 2) - (at.y + at.H * s / 2);
+    return `translate(${dx}px,${dy}px) scale(${s})`;
+  }
+
+  function place(el){
+    const t = el.getBoundingClientRect();
+    // where it is coming from: itself if it is already open, the thumbnail if
+    // this is a fresh open. Read before the new position is applied.
+    const open = pop.classList.contains("show");
+    const from = open ? pop.getBoundingClientRect() : t;
+    const at = spot(t);
+
+    // pin the start frame with the transition suppressed, flush it, then let
+    // the stylesheet's transition carry it to rest
+    pop.style.transition = "none";
+    pop.style.left = at.x + "px";
+    pop.style.top = at.y + "px";
+    pop.style.transform = onto(from, at);
+    void pop.offsetWidth;
+    pop.style.transition = "";
+    pop.classList.add("show");
+    pop.style.transform = "";
+    anchor = el;
+  }
+
+  function show(el){
+    const id = el.dataset.peek;
+    if (!id) return;
+    if (id !== cur){
+      cur = id;
+      img.onerror = () => { img.onerror = null; img.src = IMG_2(id); };
+      img.src = IMG(id);
+    }
+    place(el);
+  }
+
+  // shrink back into the thumbnail it came out of, as long as that thumbnail is
+  // still on the page — a re-render between opening and closing replaces the
+  // whole board, and there is nothing left to shrink into
+  function hide(){
+    if (!cur) return;
+    cur = null;
+    if (anchor && anchor.isConnected){
+      // at rest the transform is identity, so the panel's own rect is its box
+      const box = pop.getBoundingClientRect();
+      pop.style.transform = onto(anchor.getBoundingClientRect(),
+                                 {x: box.left, y: box.top, W: box.width, H: box.height});
+    }
+    anchor = null;
+    pop.classList.remove("show");
+  }
+  return { show, hide };
+})();
+
+const peekTarget = e => e.target && e.target.closest && e.target.closest("[data-peek]");
+document.addEventListener("pointerover", e => { const el = peekTarget(e); if (el) PEEK.show(el); });
+document.addEventListener("pointerout",  e => { if (peekTarget(e) && !document.querySelector("[data-peek]:focus")) PEEK.hide(); });
+document.addEventListener("focusin",     e => { const el = peekTarget(e); el ? PEEK.show(el) : PEEK.hide(); });
+// a tap fires pointerover without ever firing pointerout, so touch closes on the
+// next tap somewhere else instead
+document.addEventListener("pointerdown", e => { if (!peekTarget(e)) PEEK.hide(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") PEEK.hide(); });
+// the panel is positioned in viewport coordinates, so anything that moves its
+// anchor — the sideways scroll of .board included — invalidates it
+addEventListener("scroll", () => PEEK.hide(), true);
+addEventListener("resize", () => PEEK.hide());
+
+/* ============================ BACKGROUND ============================ */
+/* A lit grid: the lines are drawn once, then a light mask — a resting pool in
+   the middle plus a glow that chases the cursor — is punched through a copy of
+   them and added back over the backdrop. Dark theme only; see the CSS note. */
+(() => {
+  const CFG = {
+    bgEdge:   '#070B1E',    // backdrop at the edges — the normal level
+    bgCore:   '#03050E',    // backdrop in the middle, where the game sits
+    line:     '90,120,255', // grid line rgb
+    core:     '175,195,255',// bright inner strand rgb
+    spacing:  78,           // px between lines (auto-clamped to viewport)
+    pool:     0.30,         // resting brightness of the grid out at the edges
+    sink:     0.30,         // share of that left in the middle (inverse vignette)
+    glowSink: 0.22,         // share of the cursor glow left over the content
+    glow:     0.55,         // brightness added under the cursor
+    reach:    0.42,         // cursor glow radius, as a share of the short side
+    ease:     0.06,         // how fast the glow chases the cursor (0-1)
+    pulse:    0.10          // idle breathing amount
+  };
+
+  const canvas = document.getElementById('grid-bg');
+  const ctx = canvas.getContext('2d');
+  const grid = document.createElement('canvas');
+  const gctx = grid.getContext('2d');
+  const mask = document.createElement('canvas');
+  const mctx = mask.getContext('2d');
+  const lit = document.createElement('canvas');
+  const lctx = lit.getContext('2d');
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const darkMQ = matchMedia('(prefers-color-scheme: dark)');
+  let W = 0, H = 0, CH = 0, dpr = 1, spacing = CFG.spacing, start = performance.now();
+  let tx = 0, ty = 0, gx = 0, gy = 0, hover = 0, hoverTarget = 0;
+  let live = false, running = false, anchor = null;
+
+  // Three stroke passes stand in for a blur: wide haze, mid glow, bright core.
+  const PASSES = [
+    [9, 0.04, false],
+    [3.5, 0.10, false],
+    [1.1, 0.50, true]
+  ];
+
+  /* ---- why the canvas sits in the page rather than over it ----
+     Scrolling is handled off the main thread. Anything JS repositions per frame
+     — a fixed canvas whose grid is redrawn at the current scroll offset — lands
+     a frame or more behind the content it is supposed to be behind, and that
+     shows up as the background sliding against the page.
+
+     So the canvas is an absolutely-positioned layer inside the document: the
+     compositor scrolls it with everything else and the lines cannot drift. It
+     is a couple of cells taller than the viewport, and it is re-anchored in
+     whole cells as you scroll past. Whole cells matter — the grid is periodic,
+     so an anchor jump of exactly one cell leaves an identical picture, which is
+     what makes the jump invisible even when it lands a frame late.
+
+     The light stays viewport-relative and is redrawn every frame in the
+     canvas's own coordinates. A light that lags the cursor by a frame is not
+     something an eye can catch; a grid that lags the page is. */
+  const MARGIN = () => spacing * 2;
+
+  function anchorFor(y){ return Math.floor(y / spacing) * spacing - MARGIN(); }
+
+  function reanchor(){
+    const want = anchorFor(scrollY);
+    if (want === anchor) return;
+    anchor = want;
+    canvas.style.top = anchor + 'px';
+  }
+
+  function resize() {
+    if (!live) return;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    spacing = Math.max(46, Math.min(CFG.spacing, W / 8));
+    CH = H + MARGIN() * 2;
+    for (const c of [canvas, grid, mask, lit]) { c.width = W * dpr; c.height = CH * dpr; }
+    for (const c of [ctx, gctx, mctx, lctx]) { c.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    canvas.style.height = CH + 'px';
+    tx = gx = W / 2; ty = gy = H / 2;
+    anchor = null; reanchor();
+    renderGrid();
+    draw(0);
+  }
+
+  // The grid only depends on the viewport size, never on the scroll position,
+  // so it is drawn once per resize.
+  function renderGrid() {
+    gctx.globalCompositeOperation = 'source-over';
+    gctx.clearRect(0, 0, W, CH);
+    gctx.lineCap = 'round';
+
+    const cols = Math.ceil(W / spacing), rows = Math.ceil(CH / spacing);
+    const ox = (W - cols * spacing) / 2;
+    const path = new Path2D();
+    for (let i = 0; i <= cols; i++) {
+      const x = Math.round(ox + i * spacing) + 0.5;
+      path.moveTo(x, -2); path.lineTo(x, CH + 2);
+    }
+    // rows start on a whole cell, because the anchor moves in whole cells and
+    // the two only line up across a re-anchor if both are on the same lattice
+    for (let j = 0; j <= rows; j++) {
+      const y = Math.round(j * spacing) + 0.5;
+      path.moveTo(-2, y); path.lineTo(W + 2, y);
+    }
+
+    for (const [width, alpha, isCore] of PASSES) {
+      gctx.lineWidth = width;
+      gctx.strokeStyle = `rgba(${isCore ? CFG.core : CFG.line},${alpha})`;
+      gctx.stroke(path);
+    }
+  }
+
+  function draw(t) {
+    // everything below is in the canvas's own coordinates; cy is where the
+    // middle of the viewport falls inside it, which is what the light is
+    // centred on
+    const cy = scrollY + H / 2 - anchor;
+
+    // backdrop — a vignette turned inside out: dimmest in the middle, coming
+    // back up to the normal level at the edges, so the column of play sits in
+    // the darkest part of the room and the grid is left to the margins
+    const R = Math.hypot(W, H);
+    const bg = ctx.createRadialGradient(W / 2, cy, 0, W / 2, cy, R * 0.55);
+    bg.addColorStop(0, CFG.bgCore);
+    bg.addColorStop(1, CFG.bgEdge);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, CH);
+
+    // Light mask, built glow-first so the glow can be damped on its own.
+    // The cursor light goes down where the page's content is and comes back at
+    // the margins — and the damping is a property of the place, not of where
+    // the cursor is: a glow centred out at the edge still fades as it reaches
+    // across the middle, rather than dimming as a whole.
+    const breath = 1 + Math.sin(t * 0.9) * CFG.pulse;
+    const radius = Math.min(W, H) * CFG.reach * breath;
+    const hy = gy + scrollY - anchor;
+    const hot = mctx.createRadialGradient(gx, hy, 0, gx, hy, radius);
+    hot.addColorStop(0, `rgba(255,255,255,${CFG.glow * hover})`);
+    hot.addColorStop(0.4, `rgba(255,255,255,${CFG.glow * hover * 0.45})`);
+    hot.addColorStop(1, 'rgba(255,255,255,0)');
+    mctx.globalCompositeOperation = 'source-over';
+    mctx.clearRect(0, 0, W, CH);
+    mctx.fillStyle = hot;
+    mctx.fillRect(0, 0, W, CH);
+
+    // destination-in multiplies what is already there by this field's alpha, so
+    // the glow keeps its shape and only loses strength over the middle
+    const damp = mctx.createRadialGradient(W / 2, cy, 0, W / 2, cy, R * 0.55);
+    damp.addColorStop(0, `rgba(255,255,255,${CFG.glowSink})`);
+    damp.addColorStop(0.55, `rgba(255,255,255,${CFG.glowSink + (1 - CFG.glowSink) * 0.45})`);
+    damp.addColorStop(1, 'rgba(255,255,255,1)');
+    mctx.globalCompositeOperation = 'destination-in';
+    mctx.fillStyle = damp;
+    mctx.fillRect(0, 0, W, CH);
+
+    // the resting level dips in the middle the same way and recovers by the
+    // edges — never to nothing, so the lines stay legible across the middle
+    const pool = mctx.createRadialGradient(W / 2, cy, 0, W / 2, cy, R * 0.55);
+    pool.addColorStop(0, `rgba(255,255,255,${CFG.pool * CFG.sink})`);
+    pool.addColorStop(0.55, `rgba(255,255,255,${CFG.pool * (CFG.sink + (1 - CFG.sink) * 0.45)})`);
+    pool.addColorStop(1, `rgba(255,255,255,${CFG.pool})`);
+    mctx.globalCompositeOperation = 'lighter';
+    mctx.fillStyle = pool;
+    mctx.fillRect(0, 0, W, CH);
+
+    // punch the mask through a copy of the grid, then add it to the backdrop
+    lctx.globalCompositeOperation = 'copy';
+    lctx.drawImage(grid, 0, 0, W, CH);
+    lctx.globalCompositeOperation = 'destination-in';
+    lctx.drawImage(mask, 0, 0, W, CH);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(lit, 0, 0, W, CH);
+    ctx.restore();
+  }
+
+  function frame(now) {
+    // a full-viewport repaint every frame is not worth running for a tab nobody
+    // is looking at, or for a theme that has the canvas hidden
+    if (!live || document.hidden){ running = false; return; }
+    const t = (now - start) / 1000;
+    reanchor();
+    gx += (tx - gx) * CFG.ease;
+    gy += (ty - gy) * CFG.ease;
+    hover += (hoverTarget - hover) * 0.05;
+    draw(t);
+    requestAnimationFrame(frame);
+  }
+
+  function loop(){
+    if (running || reduced || !live) return;
+    running = true;
+    start = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  // theme = the explicit choice if one has been made, otherwise what the OS says
+  function themeIsDark(){
+    const set = document.documentElement.dataset.theme;
+    return set ? set === "dark" : darkMQ.matches;
+  }
+
+  function sync(){
+    const want = themeIsDark();
+    if (want === live) return;
+    live = want;
+    document.body.classList.toggle("canvasbg", live);
+    if (live){ resize(); loop(); }
+  }
+
+  addEventListener('pointermove', e => { tx = e.clientX; ty = e.clientY; hoverTarget = 1; });
+  addEventListener('pointerleave', () => { hoverTarget = 0; });
+  addEventListener('resize', resize);
+  // the running loop re-anchors every frame; this is for the reduced-motion
+  // case, where there is no loop to do it
+  addEventListener('scroll', () => { if (live && !running){ reanchor(); draw(0); } }, {passive: true});
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loop(); });
+  darkMQ.addEventListener('change', sync);
+  sync();
+})();
 
 /* ============================ WIRING ============================ */
 
