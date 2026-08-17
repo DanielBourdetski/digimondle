@@ -73,6 +73,8 @@ const ctx = {
   performance: {now: () => 0},
   addEventListener(){},
   innerWidth: 1440, innerHeight: 900, devicePixelRatio: 1,
+  location: {search: ""},           // the colour debug panel checks for ?debug
+  getComputedStyle: () => ({getPropertyValue: () => ""}),
   Path2D: class { moveTo(){} lineTo(){} },
   setTimeout, clearTimeout, console,
   Date, Math, JSON, Object, Array, String, Number, RegExp, Set, Map, Error
